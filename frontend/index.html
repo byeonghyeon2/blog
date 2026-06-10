@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>블로그 자동 작성</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/style.css?v=20260608-1">
+</head>
+<body>
+
+    <!-- 상단 헤더: 앱 이름, 설명, 네비게이션 -->
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="topbar-logo">✍</div>
+            <div>
+                <h1>블로그 자동 작성</h1>
+                <p>IT 기술 글 생성 · 검수 · Tistory 발행 도구</p>
+            </div>
+        </div>
+        <nav>
+            <a href="#create" class="nav-link">
+                <span class="nav-icon">✦</span> 글 생성
+            </a>
+            <a href="#posts" class="nav-link">
+                <span class="nav-icon">☰</span> 글 목록
+            </a>
+        </nav>
+    </header>
+
+    <main>
+
+        <!-- 대시보드 요약: 상태별 글 개수 -->
+        <section class="summary">
+            <div class="summary-card">
+                <span class="summary-label">전체 글</span>
+                <strong id="totalCount">0</strong>
+            </div>
+            <div class="summary-card draft">
+                <span class="summary-label">초안</span>
+                <strong id="draftCount">0</strong>
+            </div>
+            <div class="summary-card review">
+                <span class="summary-label">검수중</span>
+                <strong id="reviewCount">0</strong>
+            </div>
+            <div class="summary-card published">
+                <span class="summary-label">발행완료</span>
+                <strong id="publishedCount">0</strong>
+            </div>
+        </section>
+
+        <!-- 글 생성 영역: 입력 패널 / 에디터 패널 / 체크리스트 패널 -->
+        <section id="create" class="layout">
+
+            <!-- 좌측: 생성 입력 패널 -->
+            <div class="panel panel--input">
+                <div class="panel-header">
+                    <h2>글 생성</h2>
+                    <span class="panel-badge">NEW</span>
+                </div>
+
+                <div class="field-group">
+                    <label for="keyword">키워드</label>
+                    <input
+                        id="keyword"
+                        type="text"
+                        placeholder="예: FastAPI MySQL 연동"
+                        autocomplete="off"
+                    >
+                </div>
+
+                <div class="field-group">
+                    <label for="postType">글 유형</label>
+                    <select id="postType">
+                        <option value="CONCEPT">개념 설명형</option>
+                        <option value="TOOL_GUIDE">툴 사용법형</option>
+                        <option value="ERROR_FIX">에러 해결형</option>
+                        <option value="COMPARE">비교 분석형</option>
+                        <option value="CODE_EXAMPLE">예제 코드형</option>
+                    </select>
+                </div>
+
+                <div class="field-group">
+                    <label for="targetLength">목표 글자 수</label>
+                    <input
+                        id="targetLength"
+                        type="number"
+                        value="2500"
+                        min="1000"
+                        max="10000"
+                        step="500"
+                    >
+                </div>
+
+                <div class="field-group">
+                    <label class="check-label">
+                        <input id="includeCode" type="checkbox">
+                        <span class="check-mark"></span>
+                        예제 코드 포함
+                    </label>
+                </div>
+
+                <div class="field-group">
+                    <label for="generationMode">생성 항목</label>
+                    <select id="generationMode">
+                        <option value="ALL">전체 생성</option>
+                        <option value="TITLE">제목 생성</option>
+                        <option value="OUTLINE">목차 생성</option>
+                        <option value="CONTENT">본문 생성</option>
+                        <option value="SEO">SEO 생성</option>
+                    </select>
+                </div>
+
+                <div class="actions">
+                    <!-- 생성하기 버튼: 클릭 시 AI 호출 시작 -->
+                    <button id="btnGenerate" class="btn btn--primary btn--full">
+                        <span class="btn-text">생성하기</span>
+                        <span class="btn-loader" aria-hidden="true"></span>
+                    </button>
+                </div>
+
+                <!-- 현재 편집 중인 글 ID 표시 (새 글이면 숨김) -->
+                <div id="currentPostBadge" class="current-post-badge" style="display:none;">
+                    <span>편집 중: Post #<span id="currentPostIdLabel"></span></span>
+                    <button id="btnNewPost" class="btn btn--ghost btn--sm">새 글</button>
+                </div>
+            </div>
+
+            <!-- 중앙: 에디터 패널 -->
+            <div class="panel panel--editor">
+                <div class="panel-header">
+                    <h2>생성 결과</h2>
+                    <div class="editor-actions">
+                        <!-- 글 상태 변경 드롭다운 -->
+                        <select id="postStatus" class="status-select">
+                            <option value="DRAFT">초안</option>
+                            <option value="REVIEWING">검수중</option>
+                            <option value="READY">준비완료</option>
+                            <option value="PUBLISHED">발행완료</option>
+                            <option value="ARCHIVED">보관</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="title">제목</label>
+                    <textarea
+                        id="title"
+                        rows="3"
+                        placeholder="제목 후보를 생성한 뒤 사용할 제목만 남겨두세요."
+                    ></textarea>
+                </div>
+
+                <div class="field-group">
+                    <label for="outline">목차</label>
+                    <textarea id="outline" rows="8" placeholder="목차가 여기에 생성됩니다."></textarea>
+                </div>
+
+                <div class="field-group">
+                    <label for="contentText">본문</label>
+                    <textarea id="contentText" rows="18" placeholder="본문이 여기에 생성됩니다."></textarea>
+                </div>
+
+                <div class="field-group">
+                    <label for="seo">SEO / 태그</label>
+                    <textarea id="seo" rows="4" placeholder="SEO 설명과 태그가 여기에 생성됩니다."></textarea>
+                </div>
+
+                <div class="actions actions--spread">
+                    <!-- 저장 버튼: 새 글 또는 기존 글 업데이트 -->
+                    <button id="btnSave" class="btn btn--primary">
+                        💾 글 저장
+                    </button>
+                    <div class="action-group">
+                        <!-- 복사 버튼: 텍스트 / HTML 두 가지 -->
+                        <button id="btnCopyText" class="btn btn--secondary">본문 복사</button>
+                        <button id="btnCopyHtml" class="btn btn--secondary">HTML 복사</button>
+                        <!-- 현재 글 삭제 버튼 (저장된 글에만 활성화) -->
+                        <button id="btnDelete" class="btn btn--danger" style="display:none;">삭제</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 우측: 검수 체크리스트 패널 -->
+            <aside class="panel panel--checklist">
+                <div class="panel-header">
+                    <h2>검수 체크리스트</h2>
+                </div>
+                <ul class="checklist">
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            번호 체계가 맞는가
+                        </label>
+                    </li>
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            설명이 짧고 명확한가
+                        </label>
+                    </li>
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            실무 사용 방식 중심인가
+                        </label>
+                    </li>
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            코드 설명이 번호로 정리됐는가
+                        </label>
+                    </li>
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            과장된 문구가 없는가
+                        </label>
+                    </li>
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            Tistory 복사 시 문단이 자연스러운가
+                        </label>
+                    </li>
+                    <li class="checklist-item">
+                        <label>
+                            <input type="checkbox">
+                            <span class="check-mark"></span>
+                            SEO 설명이 100자 내외인가
+                        </label>
+                    </li>
+                </ul>
+
+                <!-- 체크리스트 진행률 표시 -->
+                <div class="checklist-progress">
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="progressLabel" class="progress-label">0 / 7</span>
+                </div>
+
+                <!-- 체크리스트 전체 초기화 버튼 -->
+                <button id="btnClearChecklist" class="btn btn--ghost btn--sm" style="margin-top: 8px; width: 100%;">
+                    체크 초기화
+                </button>
+            </aside>
+        </section>
+
+        <!-- 글 목록 영역 -->
+        <section id="posts" class="panel posts-panel">
+            <div class="section-head">
+                <h2>글 목록</h2>
+                <div class="section-head-actions">
+                    <!-- 키워드 검색 입력 -->
+                    <input
+                        id="searchKeyword"
+                        type="text"
+                        placeholder="키워드 검색..."
+                        class="search-input"
+                    >
+                    <!-- 상태 필터 드롭다운 -->
+                    <select id="filterStatus" class="filter-select">
+                        <option value="">전체 상태</option>
+                        <option value="DRAFT">초안</option>
+                        <option value="REVIEWING">검수중</option>
+                        <option value="READY">준비완료</option>
+                        <option value="PUBLISHED">발행완료</option>
+                        <option value="ARCHIVED">보관</option>
+                    </select>
+                    <button id="btnReload" class="btn btn--ghost">↻ 새로고침</button>
+                </div>
+            </div>
+
+            <!-- 글 목록 테이블 -->
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="col-id">ID</th>
+                            <th class="col-title">제목</th>
+                            <th class="col-kw">키워드</th>
+                            <th class="col-type">유형</th>
+                            <th class="col-status">상태</th>
+                            <th class="col-date">생성일</th>
+                        </tr>
+                    </thead>
+                    <tbody id="postRows"></tbody>
+                </table>
+
+                <!-- 목록이 비어있을 때 표시할 빈 상태 메시지 -->
+                <div id="emptyState" class="empty-state" style="display:none;">
+                    <p>저장된 글이 없습니다. 위에서 글을 생성하고 저장해보세요.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 토스트 알림 (우하단 고정 표시) -->
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <!-- 전역 로딩 오버레이: AI 호출 중 화면 차단 -->
+    <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
+        <div class="loading-box">
+            <div class="loading-spinner"></div>
+            <p id="loadingMessage">AI가 글을 생성하고 있습니다…</p>
+        </div>
+    </div>
+
+    <!-- 삭제 확인 모달 -->
+    <div id="deleteModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal">
+            <h3>글 삭제</h3>
+            <p>이 글을 삭제하면 복구할 수 없습니다. 정말 삭제하시겠습니까?</p>
+            <div class="modal-actions">
+                <button id="btnDeleteConfirm" class="btn btn--danger">삭제하기</button>
+                <button id="btnDeleteCancel" class="btn btn--ghost">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="/assets/js/app.js"></script>
+</body>
+</html>

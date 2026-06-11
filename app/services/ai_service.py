@@ -45,7 +45,7 @@ POST_TYPE_LABELS: dict[PostType, str] = {
 # 핵심 생성 함수
 # ───────────────────────────────────────────
 
-def generate_text(prompt: str) -> str:
+def generate_text(prompt: str, reference_image_data_url: str | None = None) -> str:
     """
     OpenAI Responses API를 호출하여 텍스트를 생성합니다.
     API 키가 설정되어 있지 않으면 fallback_response를 반환합니다.
@@ -64,18 +64,54 @@ def generate_text(prompt: str) -> str:
         return fallback_response(prompt)
 
     client = OpenAI(api_key=settings.openai_api_key)
-    response = client.responses.create(
+    user_content: str | list[dict[str, object]]
+    if reference_image_data_url:
+        user_content = [
+            {"type": "text", "text": prompt},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": reference_image_data_url,
+                },
+            },
+        ]
+    else:
+        user_content = prompt
+
+    response = client.chat.completions.create(
         model=settings.openai_model,
-        input=prompt,
+        messages=[
+            {"role": "system", "content": "너는 티스토리 IT 블로그 글을 작성하는 한국어 기술 블로거다."},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.4,
     )
-    return response.output_text.strip()
+    return response.choices[0].message.content.strip()
 
 
 # ───────────────────────────────────────────
 # 프롬프트 생성 함수
 # ───────────────────────────────────────────
 
-def title_prompt(keyword: str, post_type: PostType) -> str:
+def reference_image_instruction(has_reference_image: bool) -> str:
+    """
+    사용자가 올린 참고 이미지를 어떻게 활용할지 프롬프트에 추가합니다.
+    이미지의 레이아웃/정보 배치만 참고하고 문체는 기존 스타일을 유지하도록 제한합니다.
+    """
+    if not has_reference_image:
+        return ""
+
+    return f"""
+
+참고 방식:
+- 첨부된 참고 이미지는 글의 화면 구성, 정보 배치, 섹션 흐름만 참고
+- 이미지 안의 문장, 말투, 표현, 사례를 그대로 따라 쓰지 말 것
+- 참고 이미지의 디자인 요소를 설명하지 말고, 블로그 글 구조에만 반영
+- 최종 말투와 작성 습관은 반드시 아래 문체 규칙을 우선 적용
+""".rstrip()
+
+
+def title_prompt(keyword: str, post_type: PostType, has_reference_image: bool = False) -> str:
     """
     키워드와 글 유형을 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
 
@@ -91,6 +127,7 @@ def title_prompt(keyword: str, post_type: PostType) -> str:
 
 키워드: {keyword}
 글 유형: {POST_TYPE_LABELS[post_type]}
+{reference_image_instruction(has_reference_image)}
 
 문체 규칙:
 {STYLE_RULES}
@@ -102,7 +139,7 @@ def title_prompt(keyword: str, post_type: PostType) -> str:
 """.strip()
 
 
-def outline_prompt(title: str, keyword: str, post_type: PostType) -> str:
+def outline_prompt(title: str, keyword: str, post_type: PostType, has_reference_image: bool = False) -> str:
     """
     선택된 제목으로 번호형 목차를 요청하는 프롬프트를 생성합니다.
 
@@ -120,6 +157,7 @@ def outline_prompt(title: str, keyword: str, post_type: PostType) -> str:
 제목: {title}
 키워드: {keyword}
 글 유형: {POST_TYPE_LABELS[post_type]}
+{reference_image_instruction(has_reference_image)}
 
 문체 규칙:
 {STYLE_RULES}
@@ -138,6 +176,7 @@ def content_prompt(
     outline: str,
     include_code: bool,
     target_length: int,
+    has_reference_image: bool = False,
 ) -> str:
     """
     목차를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
@@ -167,6 +206,7 @@ def content_prompt(
 키워드: {keyword}
 글 유형: {POST_TYPE_LABELS[post_type]}
 목표 길이: 약 {target_length}자
+{reference_image_instruction(has_reference_image)}
 
 목차:
 {outline}

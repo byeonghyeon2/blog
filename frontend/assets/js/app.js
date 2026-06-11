@@ -7,7 +7,6 @@
  *  - 글 목록 조회 (키워드 검색 + 상태 필터)
  *  - 대시보드 요약 카운트 갱신
  *  - 클립보드 복사 (텍스트 / HTML)
- *  - 검수 체크리스트 진행률 표시
  *  - 삭제 확인 모달
  */
 
@@ -29,6 +28,33 @@ const API = '';
  * @type {number|null}
  */
 let currentPostId = null;
+
+/**
+ * 사용자가 업로드한 참고 이미지의 data URL입니다.
+ * OpenAI 호출 시 이미지 레이아웃/구성 참고용으로 함께 전달합니다.
+ * @type {string|null}
+ */
+let referenceImageDataUrl = null;
+
+/**
+ * 현재 표시할 화면을 전환합니다.
+ * posts: 글 목록 화면, create: 글 작성/수정 화면
+ *
+ * @param {'posts'|'create'} viewName - 표시할 화면 이름
+ */
+function showView(viewName) {
+    const normalized = viewName === 'create' ? 'create' : 'posts';
+
+    $('#postsView').toggle(normalized === 'posts');
+    $('#createView').toggle(normalized === 'create');
+
+    $('[data-view-link]').removeClass('active');
+    $(`[data-view-link="${normalized}"]`).addClass('active');
+
+    if (window.location.hash !== `#${normalized === 'create' ? 'create' : 'posts'}`) {
+        window.location.hash = normalized === 'create' ? 'create' : 'posts';
+    }
+}
 
 // ───────────────────────────────────────────
 // 유틸리티 함수
@@ -105,7 +131,101 @@ function requestBody() {
     return {
         keyword:   $('#keyword').val().trim(),
         post_type: $('#postType').val(),
+        reference_image_data_url: referenceImageDataUrl,
     };
+}
+
+/**
+ * textarea 내용을 HTML 미리보기로 변환합니다.
+ * 실제 저장 HTML과 완전히 같지는 않지만, 작성 중 읽힘새를 확인하기 위한 가벼운 렌더러입니다.
+ *
+ * @param {string} value - 원본 텍스트
+ * @returns {string} 미리보기용 HTML
+ */
+function previewTextToHtml(value) {
+    const escaped = escapeHtml(value || '');
+    return escaped
+        .split(/\n{2,}/)
+        .map((block) => {
+            const line = block.trim();
+            if (!line) return '';
+            if (/^\d+\.\s/.test(line)) {
+                return `<h3>${line}</h3>`;
+            }
+            return `<p>${line.replaceAll('\n', '<br>')}</p>`;
+        })
+        .join('');
+}
+
+/**
+ * 목차 텍스트를 실제 블로그 본문 안의 목차처럼 렌더링합니다.
+ *
+ * @param {string} value - 목차 원본 텍스트
+ * @returns {string} 미리보기용 목차 HTML
+ */
+function previewOutlineToHtml(value) {
+    const lines = String(value || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    if (!lines.length) return '';
+
+    const items = lines
+        .map((line) => `<li>${escapeHtml(line)}</li>`)
+        .join('');
+
+    return `
+        <nav class="preview-toc" aria-label="글 목차">
+            <strong>목차</strong>
+            <ol>${items}</ol>
+        </nav>
+    `;
+}
+
+/**
+ * SEO 결과에서 태그처럼 보이는 값을 추출해 글 하단에 가볍게 표시합니다.
+ * SEO 설명 전체를 카드로 보여주지 않고, 실제 블로그의 태그 영역처럼 보이게 하기 위함입니다.
+ *
+ * @param {string} value - SEO 원본 텍스트
+ * @returns {string} 미리보기용 태그 HTML
+ */
+function previewSeoToHtml(value) {
+    const tags = String(value || '')
+        .split(/[\n,#]/)
+        .map((tag) => tag.replace(/^(태그|tags?|키워드)\s*[:：-]?\s*/i, '').trim())
+        .filter(Boolean)
+        .slice(0, 8);
+
+    if (!tags.length) return '';
+
+    return `
+        <div class="preview-tags">
+            ${tags.map((tag) => `<span>#${escapeHtml(tag.replace(/^#/, ''))}</span>`).join('')}
+        </div>
+    `;
+}
+
+/**
+ * 현재 작성 영역의 제목/목차/본문/SEO 값을 조합해 최종 글 미리보기를 갱신합니다.
+ */
+function updatePostPreview() {
+    const title = getFirstTitle();
+    const outline = $('#outline').val().trim();
+    const content = $('#contentText').val().trim();
+    const seo = $('#seo').val().trim();
+
+    if (!title && !outline && !content && !seo) {
+        $('#postPreview').html('<p class="preview-empty">제목, 목차, 본문을 생성하면 이곳에 최종 글 형태로 표시됩니다.</p>');
+        return;
+    }
+
+    $('#postPreview').html(`
+        ${title ? `<h1>${escapeHtml(title)}</h1>` : ''}
+        ${outline ? previewOutlineToHtml(outline) : ''}
+        ${content ? `<div class="preview-content">${previewTextToHtml(content)}</div>` : ''}
+        ${seo ? previewSeoToHtml(seo) : ''}
+    `);
 }
 
 /**
@@ -302,9 +422,11 @@ async function openPost(postId) {
         $('#postStatus').val(status).attr('data-status', status);
 
         updateCurrentPostUI(post.id);
+        updatePostPreview();
 
-        // 편집 패널 상단으로 부드럽게 스크롤
-        $('html').animate({ scrollTop: $('#create').offset().top - 80 }, 300);
+        // 작성 화면으로 전환합니다.
+        showView('create');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         toast('글을 불러왔습니다.');
     } catch (err) {
         console.error('[openPost] 글 로드 실패:', err);
@@ -331,6 +453,7 @@ async function generateTitle() {
 
     const data = await postJson(`${API}/api/ai/title`, body);
     setGeneratedTitle(data.result);
+    updatePostPreview();
     toast('제목을 생성했습니다.');
     return getFirstTitle();
 }
@@ -353,6 +476,7 @@ async function generateOutline() {
     const data = await postJson(`${API}/api/ai/outline`, { ...base, title });
     $('#outline').val(data.result);
     $('#title').val(title);
+    updatePostPreview();
     toast('목차를 생성했습니다.');
     return data.result;
 }
@@ -381,6 +505,7 @@ async function generateContent() {
         target_length: Number($('#targetLength').val()) || 2500,
     });
     $('#contentText').val(data.result);
+    updatePostPreview();
     toast('본문을 생성했습니다.');
     return data.result;
 }
@@ -407,6 +532,7 @@ async function generateSeo() {
         content_text: contentText,
     });
     $('#seo').val(data.result);
+    updatePostPreview();
     toast('SEO 정보를 생성했습니다.');
     return data.result;
 }
@@ -530,6 +656,7 @@ async function savePost() {
             $('#searchKeyword').val().trim(),
             $('#filterStatus').val(),
         );
+        showView('posts');
     } catch (err) {
         const message = err?.responseJSON?.detail || '저장 중 오류가 발생했습니다.';
         toast(message, true);
@@ -557,6 +684,7 @@ async function deleteCurrentPost() {
         resetEditor();
         await loadDashboard();
         await loadPosts();
+        showView('posts');
         toast('글을 삭제했습니다.');
     } catch (err) {
         const message = err?.responseJSON?.detail || '삭제 중 오류가 발생했습니다.';
@@ -576,8 +704,20 @@ function resetEditor() {
     $('#outline').val('');
     $('#contentText').val('');
     $('#seo').val('');
+    clearReferenceImage();
     $('#postStatus').val('DRAFT').attr('data-status', 'DRAFT');
     updateCurrentPostUI(null);
+    updatePostPreview();
+}
+
+/**
+ * 참고 이미지 선택 값을 초기화합니다.
+ */
+function clearReferenceImage() {
+    referenceImageDataUrl = null;
+    $('#referenceImage').val('');
+    $('#referenceImageThumb').attr('src', '');
+    $('#referenceImagePreview').hide();
 }
 
 // ───────────────────────────────────────────
@@ -647,24 +787,6 @@ async function copyHtml() {
 }
 
 // ───────────────────────────────────────────
-// 검수 체크리스트 진행률 관리
-// ───────────────────────────────────────────
-
-/**
- * 체크리스트의 체크된 항목 수를 세어 진행률 바와 레이블을 갱신합니다.
- * 체크리스트 내 체크박스가 변경될 때마다 자동으로 호출됩니다.
- */
-function updateChecklistProgress() {
-    const $items   = $('.checklist input[type="checkbox"]');
-    const total    = $items.length;
-    const checked  = $items.filter(':checked').length;
-    const pct      = total > 0 ? Math.round((checked / total) * 100) : 0;
-
-    $('#progressFill').css('width', `${pct}%`);
-    $('#progressLabel').text(`${checked} / ${total}`);
-}
-
-// ───────────────────────────────────────────
 // 이벤트 바인딩
 // ───────────────────────────────────────────
 
@@ -689,6 +811,24 @@ $('#btnCopyHtml').on('click', copyHtml);
 $('#btnNewPost').on('click', () => {
     resetEditor();
     toast('새 글 작성을 시작합니다.');
+});
+
+// 목록 화면에서 새 글 작성 버튼 클릭
+$('#btnGoCreate').on('click', () => {
+    resetEditor();
+    showView('create');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+// 상단 네비게이션으로 화면 전환
+$('[data-view-link]').on('click', function (event) {
+    event.preventDefault();
+    const target = $(this).data('view-link');
+    if (target === 'create') {
+        resetEditor();
+    }
+    showView(target);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 // 삭제 버튼: 확인 모달 열기
@@ -744,15 +884,37 @@ $('#postStatus').on('change', function () {
     $(this).attr('data-status', $(this).val());
 });
 
-// 체크리스트 변경 시 진행률 갱신
-$(document).on('change', '.checklist input[type="checkbox"]', updateChecklistProgress);
+// 참고 이미지 업로드: 브라우저에서 data URL로 읽어 OpenAI 요청에 함께 전달합니다.
+$('#referenceImage').on('change', function () {
+    const file = this.files?.[0];
+    if (!file) {
+        clearReferenceImage();
+        return;
+    }
+    if (!file.type.startsWith('image/')) {
+        toast('이미지 파일만 업로드할 수 있습니다.', true);
+        clearReferenceImage();
+        return;
+    }
 
-// 체크리스트 전체 초기화
-$('#btnClearChecklist').on('click', () => {
-    $('.checklist input[type="checkbox"]').prop('checked', false);
-    updateChecklistProgress();
-    toast('체크리스트를 초기화했습니다.');
+    const reader = new FileReader();
+    reader.onload = () => {
+        referenceImageDataUrl = String(reader.result);
+        $('#referenceImageThumb').attr('src', referenceImageDataUrl);
+        $('#referenceImagePreview').show();
+        toast('참고 이미지를 불러왔습니다.');
+    };
+    reader.onerror = () => {
+        toast('이미지를 읽는 중 오류가 발생했습니다.', true);
+        clearReferenceImage();
+    };
+    reader.readAsDataURL(file);
 });
+
+$('#btnClearReferenceImage').on('click', clearReferenceImage);
+
+// 작성 중에도 미리보기가 계속 갱신되도록 처리합니다.
+$('#title, #outline, #contentText, #seo').on('input', updatePostPreview);
 
 // ───────────────────────────────────────────
 // 초기 로드
@@ -765,5 +927,6 @@ $('#btnClearChecklist').on('click', () => {
 $(async function () {
     await loadDashboard();
     await loadPosts();
-    updateChecklistProgress();
+    updatePostPreview();
+    showView(window.location.hash === '#create' ? 'create' : 'posts');
 });

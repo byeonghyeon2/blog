@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 from app.models.post import PostType
 
@@ -6,12 +7,14 @@ from app.models.post import PostType
 class TitleRequest(BaseModel):
     keyword: str
     post_type: PostType
+    reference_image_data_url: Optional[str] = None
 
 
 class OutlineRequest(BaseModel):
     title: str
     keyword: str
     post_type: PostType
+    reference_image_data_url: Optional[str] = None
 
 
 class ContentRequest(BaseModel):
@@ -21,6 +24,7 @@ class ContentRequest(BaseModel):
     outline: str
     include_code: bool = False
     target_length: int = 2500
+    reference_image_data_url: Optional[str] = None
 
 
 class SeoRequest(BaseModel):

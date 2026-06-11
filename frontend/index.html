@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/css/style.css?v=20260608-1">
+    <link rel="stylesheet" href="/assets/css/style.css?v=20260611-7">
 </head>
 <body>
 
@@ -21,41 +21,97 @@
             </div>
         </div>
         <nav>
-            <a href="#create" class="nav-link">
-                <span class="nav-icon">✦</span> 글 생성
-            </a>
-            <a href="#posts" class="nav-link">
+            <a href="#posts" class="nav-link" data-view-link="posts">
                 <span class="nav-icon">☰</span> 글 목록
+            </a>
+            <a href="#create" class="nav-link" data-view-link="create">
+                <span class="nav-icon">✦</span> 글 작성
             </a>
         </nav>
     </header>
 
     <main>
 
-        <!-- 대시보드 요약: 상태별 글 개수 -->
-        <section class="summary">
-            <div class="summary-card">
-                <span class="summary-label">전체 글</span>
-                <strong id="totalCount">0</strong>
-            </div>
-            <div class="summary-card draft">
-                <span class="summary-label">초안</span>
-                <strong id="draftCount">0</strong>
-            </div>
-            <div class="summary-card review">
-                <span class="summary-label">검수중</span>
-                <strong id="reviewCount">0</strong>
-            </div>
-            <div class="summary-card published">
-                <span class="summary-label">발행완료</span>
-                <strong id="publishedCount">0</strong>
-            </div>
+        <!-- 목록 화면: 첫 진입 시 기본으로 표시 -->
+        <section id="postsView" class="view-section">
+            <!-- 대시보드 요약: 상태별 글 개수 -->
+            <section class="summary">
+                <div class="summary-card">
+                    <span class="summary-label">전체 글</span>
+                    <strong id="totalCount">0</strong>
+                </div>
+                <div class="summary-card draft">
+                    <span class="summary-label">초안</span>
+                    <strong id="draftCount">0</strong>
+                </div>
+                <div class="summary-card review">
+                    <span class="summary-label">검수중</span>
+                    <strong id="reviewCount">0</strong>
+                </div>
+                <div class="summary-card published">
+                    <span class="summary-label">발행완료</span>
+                    <strong id="publishedCount">0</strong>
+                </div>
+            </section>
+
+            <!-- 글 목록 영역 -->
+            <section id="posts" class="panel posts-panel">
+                <div class="section-head">
+                    <h2>글 목록</h2>
+                    <div class="section-head-actions">
+                        <!-- 키워드 검색 입력 -->
+                        <input
+                            id="searchKeyword"
+                            type="text"
+                            placeholder="키워드 검색..."
+                            class="search-input"
+                        >
+                        <!-- 상태 필터 드롭다운 -->
+                        <select id="filterStatus" class="filter-select">
+                            <option value="">전체 상태</option>
+                            <option value="DRAFT">초안</option>
+                            <option value="REVIEWING">검수중</option>
+                            <option value="READY">준비완료</option>
+                            <option value="PUBLISHED">발행완료</option>
+                            <option value="ARCHIVED">보관</option>
+                        </select>
+                        <button id="btnReload" class="btn btn--ghost">↻ 새로고침</button>
+                        <button id="btnGoCreate" class="btn btn--primary">새 글 작성</button>
+                    </div>
+                </div>
+
+                <!-- 글 목록 테이블 -->
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="col-id">ID</th>
+                                <th class="col-title">제목</th>
+                                <th class="col-kw">키워드</th>
+                                <th class="col-type">유형</th>
+                                <th class="col-status">상태</th>
+                                <th class="col-date">생성일</th>
+                            </tr>
+                        </thead>
+                        <tbody id="postRows"></tbody>
+                    </table>
+
+                    <!-- 목록이 비어있을 때 표시할 빈 상태 메시지 -->
+                    <div id="emptyState" class="empty-state" style="display:none;">
+                        <p>저장된 글이 없습니다. 새 글을 작성해보세요.</p>
+                    </div>
+                </div>
+            </section>
         </section>
 
-        <!-- 글 생성 영역: 입력 패널 / 에디터 패널 / 체크리스트 패널 -->
-        <section id="create" class="layout">
+        <!-- 글 작성 화면: 상단은 생성 조건/결과, 하단은 최종 미리보기로 구성합니다. -->
+        <section id="createView" class="view-section" style="display:none;">
+        <section id="create" class="create-stack">
 
-            <!-- 좌측: 생성 입력 패널 -->
+            <!-- 상단 row: 왼쪽은 생성 조건, 오른쪽은 생성 결과 편집 영역입니다. -->
+            <section class="create-top-row">
+
+            <!-- 좌측 상단: 글 생성 조건 입력 패널 -->
             <div class="panel panel--input">
                 <div class="panel-header">
                     <h2>글 생성</h2>
@@ -114,6 +170,15 @@
                     </select>
                 </div>
 
+                <div class="field-group">
+                    <label for="referenceImage">참고 이미지</label>
+                    <input id="referenceImage" type="file" accept="image/png,image/jpeg,image/webp">
+                    <div id="referenceImagePreview" class="image-reference" style="display:none;">
+                        <img id="referenceImageThumb" alt="참고 이미지 미리보기">
+                        <button id="btnClearReferenceImage" type="button" class="btn btn--ghost btn--sm">이미지 제거</button>
+                    </div>
+                </div>
+
                 <div class="actions">
                     <!-- 생성하기 버튼: 클릭 시 AI 호출 시작 -->
                     <button id="btnGenerate" class="btn btn--primary btn--full">
@@ -129,7 +194,7 @@
                 </div>
             </div>
 
-            <!-- 중앙: 에디터 패널 -->
+            <!-- 우측 상단: 생성 결과 편집 패널 -->
             <div class="panel panel--editor">
                 <div class="panel-header">
                     <h2>생성 결과</h2>
@@ -183,125 +248,18 @@
                     </div>
                 </div>
             </div>
+            </section>
 
-            <!-- 우측: 검수 체크리스트 패널 -->
-            <aside class="panel panel--checklist">
+            <!-- 하단: 최종 글 미리보기 패널 -->
+            <section class="panel preview-panel">
                 <div class="panel-header">
-                    <h2>검수 체크리스트</h2>
+                    <h2>최종 미리보기</h2>
+                    <span class="panel-badge">PREVIEW</span>
                 </div>
-                <ul class="checklist">
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            번호 체계가 맞는가
-                        </label>
-                    </li>
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            설명이 짧고 명확한가
-                        </label>
-                    </li>
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            실무 사용 방식 중심인가
-                        </label>
-                    </li>
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            코드 설명이 번호로 정리됐는가
-                        </label>
-                    </li>
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            과장된 문구가 없는가
-                        </label>
-                    </li>
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            Tistory 복사 시 문단이 자연스러운가
-                        </label>
-                    </li>
-                    <li class="checklist-item">
-                        <label>
-                            <input type="checkbox">
-                            <span class="check-mark"></span>
-                            SEO 설명이 100자 내외인가
-                        </label>
-                    </li>
-                </ul>
-
-                <!-- 체크리스트 진행률 표시 -->
-                <div class="checklist-progress">
-                    <div class="progress-bar">
-                        <div id="progressFill" class="progress-fill" style="width: 0%"></div>
-                    </div>
-                    <span id="progressLabel" class="progress-label">0 / 7</span>
-                </div>
-
-                <!-- 체크리스트 전체 초기화 버튼 -->
-                <button id="btnClearChecklist" class="btn btn--ghost btn--sm" style="margin-top: 8px; width: 100%;">
-                    체크 초기화
-                </button>
-            </aside>
-        </section>
-
-        <!-- 글 목록 영역 -->
-        <section id="posts" class="panel posts-panel">
-            <div class="section-head">
-                <h2>글 목록</h2>
-                <div class="section-head-actions">
-                    <!-- 키워드 검색 입력 -->
-                    <input
-                        id="searchKeyword"
-                        type="text"
-                        placeholder="키워드 검색..."
-                        class="search-input"
-                    >
-                    <!-- 상태 필터 드롭다운 -->
-                    <select id="filterStatus" class="filter-select">
-                        <option value="">전체 상태</option>
-                        <option value="DRAFT">초안</option>
-                        <option value="REVIEWING">검수중</option>
-                        <option value="READY">준비완료</option>
-                        <option value="PUBLISHED">발행완료</option>
-                        <option value="ARCHIVED">보관</option>
-                    </select>
-                    <button id="btnReload" class="btn btn--ghost">↻ 새로고침</button>
-                </div>
-            </div>
-
-            <!-- 글 목록 테이블 -->
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="col-id">ID</th>
-                            <th class="col-title">제목</th>
-                            <th class="col-kw">키워드</th>
-                            <th class="col-type">유형</th>
-                            <th class="col-status">상태</th>
-                            <th class="col-date">생성일</th>
-                        </tr>
-                    </thead>
-                    <tbody id="postRows"></tbody>
-                </table>
-
-                <!-- 목록이 비어있을 때 표시할 빈 상태 메시지 -->
-                <div id="emptyState" class="empty-state" style="display:none;">
-                    <p>저장된 글이 없습니다. 위에서 글을 생성하고 저장해보세요.</p>
-                </div>
-            </div>
+                <article id="postPreview" class="post-preview">
+                    <p class="preview-empty">제목, 목차, 본문을 생성하면 이곳에 최종 글 형태로 표시됩니다.</p>
+                </article>
+            </section>
         </section>
     </main>
 
@@ -329,6 +287,6 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="/assets/js/app.js"></script>
+    <script src="/assets/js/app.js?v=20260611-7"></script>
 </body>
 </html>

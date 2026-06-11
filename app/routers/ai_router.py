@@ -9,7 +9,8 @@ ai_router.py - AI 글 생성 관련 API 엔드포인트
     POST /api/ai/html-convert - 텍스트 → Tistory HTML 변환
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from openai import APIConnectionError, OpenAIError, RateLimitError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -32,6 +33,30 @@ from app.services.html_service import text_to_tistory_html
 
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+
+def run_ai_generation(prompt: str, reference_image_data_url: str | None = None) -> str:
+    """
+    OpenAI 호출을 실행하고, 사용자가 이해할 수 있는 오류 메시지로 변환합니다.
+    결제/쿼터/네트워크 문제를 500 대신 명확한 API 오류로 내려주기 위한 래퍼입니다.
+    """
+    try:
+        return generate_text(prompt, reference_image_data_url)
+    except RateLimitError as exc:
+        raise HTTPException(
+            status_code=402,
+            detail="OpenAI API 사용량 또는 결제 한도가 부족합니다. OpenAI 결제/크레딧 설정을 확인해주세요.",
+        ) from exc
+    except APIConnectionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI API 서버에 연결하지 못했습니다. 네트워크 또는 방화벽 설정을 확인해주세요.",
+        ) from exc
+    except OpenAIError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"OpenAI API 호출 중 오류가 발생했습니다: {exc}",
+        ) from exc
 
 
 def save_generation_log(
@@ -66,8 +91,8 @@ def generate_title(request: TitleRequest, db: Session = Depends(get_db)):
     키워드와 글 유형을 기반으로 블로그 제목 후보 5개를 생성합니다.
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
-    prompt = title_prompt(request.keyword, request.post_type)
-    result = generate_text(prompt)
+    prompt = title_prompt(request.keyword, request.post_type, bool(request.reference_image_data_url))
+    result = run_ai_generation(prompt, request.reference_image_data_url)
     save_generation_log(db, "TITLE", prompt, result)
     return AiResponse(result=result)
 
@@ -78,8 +103,8 @@ def generate_outline(request: OutlineRequest, db: Session = Depends(get_db)):
     선택한 제목과 키워드를 기준으로 번호형 목차를 생성합니다.
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
-    prompt = outline_prompt(request.title, request.keyword, request.post_type)
-    result = generate_text(prompt)
+    prompt = outline_prompt(request.title, request.keyword, request.post_type, bool(request.reference_image_data_url))
+    result = run_ai_generation(prompt, request.reference_image_data_url)
     save_generation_log(db, "OUTLINE", prompt, result)
     return AiResponse(result=result)
 
@@ -98,8 +123,9 @@ def generate_content(request: ContentRequest, db: Session = Depends(get_db)):
         request.outline,
         request.include_code,
         request.target_length,
+        bool(request.reference_image_data_url),
     )
-    result = generate_text(prompt)
+    result = run_ai_generation(prompt, request.reference_image_data_url)
     save_generation_log(db, "CONTENT", prompt, result)
     return AiResponse(result=result)
 
@@ -111,7 +137,7 @@ def generate_seo(request: SeoRequest, db: Session = Depends(get_db)):
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
     prompt = seo_prompt(request.title, request.keyword, request.content_text)
-    result = generate_text(prompt)
+    result = run_ai_generation(prompt)
     save_generation_log(db, "SEO", prompt, result)
     return AiResponse(result=result)
 

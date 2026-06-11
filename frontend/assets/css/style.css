@@ -138,9 +138,18 @@ body {
     color: #ffffff;
 }
 
+.nav-link.active {
+    background: rgba(255,255,255,.14);
+    color: #ffffff;
+}
+
 .nav-icon {
     font-size: 11px;
     opacity: 0.7;
+}
+
+.view-section {
+    animation: slideUp 0.16s ease;
 }
 
 /* ── 메인 콘텐츠 ── */
@@ -208,12 +217,31 @@ main {
     letter-spacing: 0;
 }
 
-/* ── 3열 레이아웃 ── */
-.layout {
+/* ── 글 작성 화면 레이아웃 ── */
+.create-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+/* 상단 row는 생성 조건을 좁게, 생성 결과를 넓게 배치합니다. */
+.create-top-row {
     display: grid;
-    grid-template-columns: 290px minmax(0, 1fr) 270px;
+    grid-template-columns: 300px minmax(0, 1fr);
     gap: 18px;
     align-items: start;
+}
+
+.panel--input {
+    min-height: 560px;
+}
+
+.panel--editor {
+    min-height: 560px;
+}
+
+.preview-panel {
+    min-height: 260px;
 }
 
 /* ── 공통 패널 ── */
@@ -523,6 +551,24 @@ select {
     font-weight: 500;
 }
 
+.image-reference {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: #f8f9fb;
+}
+
+.image-reference img {
+    display: block;
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    background: #ffffff;
+}
+
 /* ── 상태 선택 드롭다운 (에디터 헤더) ── */
 .status-select {
     width: auto;
@@ -537,82 +583,86 @@ select {
 .status-select[data-status="REVIEWING"] { color: var(--color-review);    border-color: var(--color-review);    background: var(--color-review-lt); }
 .status-select[data-status="PUBLISHED"] { color: var(--color-published); border-color: var(--color-published); background: var(--color-published-lt); }
 
-/* ── 체크리스트 패널 ── */
-.checklist {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.checklist-item label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 6px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 400;
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--color-text);
-    transition: background var(--transition);
-    user-select: none;
-}
-
-.checklist-item label:hover {
-    background: var(--color-bg);
-}
-
-.checklist-item input[type="checkbox"] {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-/* 체크 완료된 항목은 흐리게 처리 */
-.checklist-item input:checked ~ span:last-child {
-    text-decoration: line-through;
-    color: var(--color-text-muted);
-}
-
-/* ── 체크리스트 진행률 바 ── */
-.checklist-progress {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid var(--color-border);
-}
-
-.progress-bar {
-    flex: 1;
-    height: 6px;
-    background: var(--color-bg);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-published));
-    border-radius: 3px;
-    transition: width 0.3s ease;
-}
-
-.progress-label {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-text-muted);
-    white-space: nowrap;
-}
-
 /* ── 글 목록 패널 ── */
 .posts-panel {
     margin-top: 20px;
+}
+
+.post-preview {
+    max-width: 820px;
+    margin: 0 auto;
+    color: var(--color-text);
+    font-size: 16px;
+    line-height: 1.85;
+    word-break: keep-all;
+}
+
+.post-preview h1 {
+    font-size: 30px;
+    line-height: 1.35;
+    margin: 8px 0 34px;
+    letter-spacing: 0;
+    font-weight: 800;
+}
+
+.post-preview h3 {
+    font-size: 21px;
+    margin: 34px 0 12px;
+    letter-spacing: 0;
+    font-weight: 700;
+}
+
+.post-preview p {
+    margin: 12px 0;
+}
+
+.preview-toc {
+    margin: 0 0 34px;
+    padding: 22px 0 24px;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.preview-toc strong {
+    display: block;
+    margin-bottom: 12px;
+    color: var(--color-text-muted);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.preview-toc ol {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.preview-toc li {
+    margin: 7px 0;
+}
+
+.preview-content {
+    padding-bottom: 26px;
+}
+
+.preview-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 30px;
+    padding-top: 18px;
+    border-top: 1px solid var(--color-border);
+}
+
+.preview-tags span {
+    color: var(--color-text-muted);
+    font-size: 14px;
+}
+
+.preview-empty {
+    color: var(--color-text-muted);
+    text-align: center;
+    padding: 36px 0;
 }
 
 .section-head {
@@ -889,13 +939,18 @@ tbody tr:last-child td {
 
 /* ── 반응형 ── */
 @media (max-width: 1200px) {
-    .layout {
-        /* 태블릿에서 2열: 입력 + 에디터, 체크리스트는 아래 */
+    .create-top-row {
         grid-template-columns: 280px minmax(0, 1fr);
     }
+}
 
-    .panel--checklist {
-        grid-column: 1 / -1;
+@media (max-width: 900px) {
+    .create-top-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .preview-panel {
+        min-height: auto;
     }
 }
 
@@ -915,10 +970,6 @@ tbody tr:last-child td {
 
     .summary {
         grid-template-columns: repeat(2, 1fr);
-    }
-
-    .layout {
-        grid-template-columns: 1fr;
     }
 
     .actions--spread {

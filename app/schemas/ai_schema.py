@@ -1,27 +1,19 @@
 from pydantic import BaseModel
 from typing import Optional
 
-from app.models.post import PostType
+from app.models.post import BlogCategory
 
 
 class TitleRequest(BaseModel):
     keyword: str
-    post_type: PostType
-    reference_image_data_url: Optional[str] = None
-
-
-class OutlineRequest(BaseModel):
-    title: str
-    keyword: str
-    post_type: PostType
+    category: BlogCategory
     reference_image_data_url: Optional[str] = None
 
 
 class ContentRequest(BaseModel):
     title: str
     keyword: str
-    post_type: PostType
-    outline: str
+    category: BlogCategory
     include_code: bool = False
     target_length: int = 2500
     reference_image_data_url: Optional[str] = None

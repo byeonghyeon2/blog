@@ -229,7 +229,7 @@ main {
     display: grid;
     grid-template-columns: 300px minmax(0, 1fr);
     gap: 18px;
-    align-items: start;
+    align-items: stretch;
 }
 
 .panel--input {
@@ -551,6 +551,58 @@ select {
     font-weight: 500;
 }
 
+.token-usage-card {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: #f8f9fb;
+}
+
+.token-usage-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+}
+
+.token-usage-head strong {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
+.token-progress {
+    height: 8px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    overflow: hidden;
+}
+
+.token-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-review));
+    transition: width 0.2s ease;
+}
+
+.token-usage-card p {
+    margin-top: 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text);
+}
+
+.token-usage-card small {
+    display: block;
+    margin-top: 4px;
+    color: var(--color-text-muted);
+    font-size: 11px;
+}
+
 .image-reference {
     margin-top: 10px;
     padding: 10px;
@@ -614,31 +666,6 @@ select {
 
 .post-preview p {
     margin: 12px 0;
-}
-
-.preview-toc {
-    margin: 0 0 34px;
-    padding: 22px 0 24px;
-    border-top: 1px solid var(--color-border);
-    border-bottom: 1px solid var(--color-border);
-}
-
-.preview-toc strong {
-    display: block;
-    margin-bottom: 12px;
-    color: var(--color-text-muted);
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0;
-}
-
-.preview-toc ol {
-    margin: 0;
-    padding-left: 20px;
-}
-
-.preview-toc li {
-    margin: 7px 0;
 }
 
 .preview-content {

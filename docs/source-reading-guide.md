@@ -19,14 +19,14 @@
 
 1. `frontend/assets/js/app.js`
    - `generateSelected()`: 생성하기 버튼을 눌렀을 때 실행되는 시작점입니다.
-   - `generateTitle()`, `generateOutline()`, `generateContent()`, `generateSeo()`: 생성 항목별 API 호출 함수입니다.
-   - `updatePostPreview()`: 제목, 목차, 본문, SEO 값을 모아 최종 미리보기를 갱신합니다.
+   - `generateTitle()`, `generateContent()`, `generateSeo()`: 생성 항목별 API 호출 함수입니다.
+   - `updatePostPreview()`: 제목, 본문, SEO 값을 모아 최종 미리보기를 갱신합니다.
    - `savePost()`: 현재 작성한 글을 MySQL에 저장하도록 백엔드 API를 호출합니다.
 
 ## 3. AI API 흐름 보기
 
 1. `app/routers/ai_router.py`
-   - `/api/ai/title`, `/api/ai/outline`, `/api/ai/content`, `/api/ai/seo` 요청을 받습니다.
+   - `/api/ai/title`, `/api/ai/content`, `/api/ai/seo` 요청을 받습니다.
    - OpenAI 오류를 사용자가 이해할 수 있는 메시지로 바꿔줍니다.
 
 2. `app/services/ai_service.py`

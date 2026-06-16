@@ -3,41 +3,38 @@ ai_service.py - OpenAI 기반 블로그 글 생성 서비스
 
 주요 기능:
     - OpenAI Responses API 호출 (generate_text)
-    - 글 유형별 프롬프트 생성 (title / outline / content / seo)
+    - 카테고리별 프롬프트 생성 (title / content / seo)
     - API 키 없는 개발 환경용 fallback 응답 (fallback_response)
 """
 
 import re
+from dataclasses import dataclass
 
 from openai import OpenAI
 
 from app.core.config import settings
-from app.models.post import PostType
+from app.models.post import BlogCategory
 
 
 # ───────────────────────────────────────────
 # 상수 정의
 # ───────────────────────────────────────────
 
-# 모든 프롬프트에 공통으로 적용되는 글쓰기 스타일 규칙
+# 모든 프롬프트에 공통으로 적용되는 말투 규칙
 STYLE_RULES = """
 - 설명은 짧고 명확하게 작성
-- 번호형 목차 사용
-- 큰 목차는 1. 2. 3. 형식
-- 하위 항목은 1), 1-1. 형식
 - "쉽게 얘기하면", "예를 들어" 같은 표현 사용
-- 실무에서 어떻게 쓰는지 중심으로 설명
+- 실제 상황에서 어떻게 쓰이는지 중심으로 설명
 - 과장된 문구, 광고성 문구, 논문식 문체 금지
-- 코드가 있으면 코드 설명을 번호로 풀어서 작성
+- 문장은 너무 길게 늘이지 말고 블로그 글처럼 자연스럽게 작성
 """.strip()
 
-# PostType 열거값 → 한글 표시명 매핑
-POST_TYPE_LABELS: dict[PostType, str] = {
-    PostType.CONCEPT:      "개념 설명형",
-    PostType.TOOL_GUIDE:   "툴 사용법형",
-    PostType.ERROR_FIX:    "에러 해결형",
-    PostType.COMPARE:      "비교 분석형",
-    PostType.CODE_EXAMPLE: "예제 코드형",
+CATEGORY_LABELS: dict[BlogCategory, str] = {
+    BlogCategory.IT:        "IT / 기술",
+    BlogCategory.FINANCE:   "금융 / 재테크",
+    BlogCategory.FOOD:      "맛집 / 음식",
+    BlogCategory.TRAVEL:    "여행 / 장소",
+    BlogCategory.LIFESTYLE: "생활 / 리뷰",
 }
 
 
@@ -45,7 +42,35 @@ POST_TYPE_LABELS: dict[PostType, str] = {
 # 핵심 생성 함수
 # ───────────────────────────────────────────
 
+@dataclass
+class GeneratedText:
+    """
+    OpenAI 응답 텍스트와 사용 토큰 수를 함께 전달하기 위한 값 객체입니다.
+    """
+
+    text: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    API 키가 없거나 usage 값이 없는 경우를 위한 대략적인 토큰 추정치입니다.
+    한국어는 글자 수와 토큰 수가 정확히 일치하지 않으므로 참고용으로만 사용합니다.
+    """
+    return max(1, len(text or "") // 2)
+
+
 def generate_text(prompt: str, reference_image_data_url: str | None = None) -> str:
+    """
+    기존 호출부 호환을 위해 텍스트만 반환합니다.
+    토큰 사용량까지 필요한 곳에서는 generate_text_with_usage를 사용합니다.
+    """
+    return generate_text_with_usage(prompt, reference_image_data_url).text
+
+
+def generate_text_with_usage(prompt: str, reference_image_data_url: str | None = None) -> GeneratedText:
     """
     OpenAI Responses API를 호출하여 텍스트를 생성합니다.
     API 키가 설정되어 있지 않으면 fallback_response를 반환합니다.
@@ -61,7 +86,15 @@ def generate_text(prompt: str, reference_image_data_url: str | None = None) -> s
     """
     if not settings.openai_api_key:
         # 개발/테스트 환경: API 키 없이도 화면 동작 확인이 가능하도록 샘플 응답 반환
-        return fallback_response(prompt)
+        text = fallback_response(prompt)
+        prompt_tokens = estimate_tokens(prompt)
+        completion_tokens = estimate_tokens(text)
+        return GeneratedText(
+            text=text,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
 
     client = OpenAI(api_key=settings.openai_api_key)
     user_content: str | list[dict[str, object]]
@@ -81,12 +114,19 @@ def generate_text(prompt: str, reference_image_data_url: str | None = None) -> s
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=[
-            {"role": "system", "content": "너는 티스토리 IT 블로그 글을 작성하는 한국어 기술 블로거다."},
+            {"role": "system", "content": "너는 티스토리 블로그 글을 작성하는 한국어 블로거다."},
             {"role": "user", "content": user_content},
         ],
         temperature=0.4,
     )
-    return response.choices[0].message.content.strip()
+    result_text = response.choices[0].message.content.strip()
+    usage = response.usage
+    return GeneratedText(
+        text=result_text,
+        prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+        completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        total_tokens=getattr(usage, "total_tokens", 0) or 0,
+    )
 
 
 # ───────────────────────────────────────────
@@ -106,86 +146,70 @@ def reference_image_instruction(has_reference_image: bool) -> str:
 참고 방식:
 - 첨부된 참고 이미지는 글의 화면 구성, 정보 배치, 섹션 흐름만 참고
 - 이미지 안의 문장, 말투, 표현, 사례를 그대로 따라 쓰지 말 것
-- 참고 이미지의 디자인 요소를 설명하지 말고, 블로그 글 구조에만 반영
-- 최종 말투와 작성 습관은 반드시 아래 문체 규칙을 우선 적용
+- 참고 이미지의 디자인 요소를 설명하지 말고, 글의 자연스러운 흐름에만 반영
+- 최종 말투는 반드시 아래 말투 규칙을 우선 적용
 """.rstrip()
 
 
-def title_prompt(keyword: str, post_type: PostType, has_reference_image: bool = False) -> str:
+def category_instruction(category: BlogCategory) -> str:
     """
-    키워드와 글 유형을 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
+    선택한 카테고리에 따라 글에서 중점적으로 다룰 관점을 제공합니다.
+    특정 양식을 강제하지 않고, 주제에 맞는 설명 방향만 잡습니다.
+    """
+    instructions = {
+        BlogCategory.IT: "IT / 기술: 개념, 사용 이유, 실제 적용 상황, 주의할 점을 중심으로 작성",
+        BlogCategory.FINANCE: "금융 / 재테크: 개념, 조건, 장단점, 리스크를 균형 있게 설명하고 투자 권유처럼 쓰지 않기",
+        BlogCategory.FOOD: "맛집 / 음식: 위치, 분위기, 메뉴, 가격대, 실제 방문자가 궁금해할 포인트 중심으로 작성",
+        BlogCategory.TRAVEL: "여행 / 장소: 동선, 비용, 준비물, 주의점, 실제 여행자가 겪을 상황 중심으로 작성",
+        BlogCategory.LIFESTYLE: "생활 / 리뷰: 사용 계기, 장단점, 추천 대상, 아쉬운 점을 솔직하게 작성",
+    }
+    return instructions[category]
+
+
+def title_prompt(keyword: str, category: BlogCategory, has_reference_image: bool = False) -> str:
+    """
+    주제/키워드와 카테고리를 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
 
     Args:
         keyword:   사용자가 입력한 핵심 키워드
-        post_type: 글 유형 (개념설명 / 툴가이드 / 에러해결 / 비교분석 / 예제코드)
+        category: 카테고리
 
     Returns:
         완성된 프롬프트 문자열
     """
     return f"""
-아래 조건에 맞춰 티스토리 IT 블로그 제목 후보 5개를 작성해줘.
+아래 조건에 맞춰 티스토리 블로그 제목 후보 5개를 작성해줘.
 
-키워드: {keyword}
-글 유형: {POST_TYPE_LABELS[post_type]}
+주제/키워드: {keyword}
+카테고리: {CATEGORY_LABELS[category]}
+카테고리 작성 방향: {category_instruction(category)}
 {reference_image_instruction(has_reference_image)}
 
-문체 규칙:
+말투 규칙:
 {STYLE_RULES}
 
 조건:
 - 제목만 번호 목록으로 작성
-- 실무 개발자가 검색할 만한 표현 사용
+- 독자가 검색할 만한 자연스러운 표현 사용
 - 과장된 제목 금지
-""".strip()
-
-
-def outline_prompt(title: str, keyword: str, post_type: PostType, has_reference_image: bool = False) -> str:
-    """
-    선택된 제목으로 번호형 목차를 요청하는 프롬프트를 생성합니다.
-
-    Args:
-        title:     사용자가 선택한 블로그 제목
-        keyword:   핵심 키워드
-        post_type: 글 유형
-
-    Returns:
-        완성된 프롬프트 문자열
-    """
-    return f"""
-아래 제목의 티스토리 IT 블로그 목차를 작성해줘.
-
-제목: {title}
-키워드: {keyword}
-글 유형: {POST_TYPE_LABELS[post_type]}
-{reference_image_instruction(has_reference_image)}
-
-문체 규칙:
-{STYLE_RULES}
-
-조건:
-- 큰 목차는 1. 2. 3. 형식
-- 필요한 경우 하위 항목은 1), 1-1. 형식
-- 개념 설명, 실무 사용 이유, 예시, 정리 흐름으로 구성
 """.strip()
 
 
 def content_prompt(
     title: str,
     keyword: str,
-    post_type: PostType,
-    outline: str,
+    category: BlogCategory,
     include_code: bool,
     target_length: int,
     has_reference_image: bool = False,
 ) -> str:
     """
-    목차를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
+    제목과 주제/키워드를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
 
     Args:
         title:         블로그 제목
         keyword:       핵심 키워드
-        post_type:     글 유형
-        outline:       AI가 생성한 번호형 목차
+        category:      카테고리
         include_code:  예제 코드 포함 여부
         target_length: 목표 글자 수 (기본 2500자)
 
@@ -194,31 +218,29 @@ def content_prompt(
     """
     # 예제 코드 포함 여부에 따라 추가 지시사항 선택
     code_rule = (
-        "예제 코드를 포함하고 코드 설명을 번호로 풀어서 작성"
+        "카테고리가 IT / 기술일 때만 필요한 경우 예제 코드를 포함"
         if include_code
-        else "코드는 꼭 필요할 때만 짧게 포함"
+        else "코드는 포함하지 말고 일반 독자가 읽기 쉬운 설명으로 작성"
     )
 
     return f"""
-아래 조건에 맞춰 티스토리 IT 블로그 본문을 작성해줘.
+아래 조건에 맞춰 티스토리 블로그 본문을 작성해줘.
 
 제목: {title}
-키워드: {keyword}
-글 유형: {POST_TYPE_LABELS[post_type]}
+주제/키워드: {keyword}
+카테고리: {CATEGORY_LABELS[category]}
+카테고리 작성 방향: {category_instruction(category)}
 목표 길이: 약 {target_length}자
 {reference_image_instruction(has_reference_image)}
 
-목차:
-{outline}
-
-문체 규칙:
+말투 규칙:
 {STYLE_RULES}
 
 추가 조건:
-- 시작 안내문은 아래 3줄을 그대로 사용
-※ 실제 프로젝트를 진행하며 얻은 지식을 정리한 내용입니다.
-※ 이론적인 내용보단 실무에서 사용하는 방식 위주로 작성하였습니다.
-※ 잘못된 내용이 있다면 댓글로 지적 부탁드리겠습니다.
+- 별도 목차를 만들지 말 것
+- 정해진 양식이나 고정 안내문을 넣지 말 것
+- 주제에 맞게 자연스러운 문단 흐름으로 작성
+- 필요한 경우에만 번호를 사용하고, 번호 형식을 억지로 맞추지 말 것
 - {code_rule}
 - 티스토리에 그대로 붙여넣기 좋은 일반 텍스트로 작성
 """.strip()
@@ -258,7 +280,7 @@ SEO 설명: ...
 def fallback_response(prompt: str) -> str:
     """
     OpenAI API 키가 없을 때 화면/저장 흐름을 테스트할 수 있는 샘플 응답을 반환합니다.
-    프롬프트 내용을 분석하여 제목 / 목차 / SEO / 본문 중 적절한 샘플을 선택합니다.
+    프롬프트 내용을 분석하여 제목 / SEO / 본문 중 적절한 샘플을 선택합니다.
 
     Args:
         prompt: 어떤 종류의 응답이 필요한지 판단하기 위한 프롬프트 원문
@@ -286,55 +308,18 @@ def fallback_response(prompt: str) -> str:
             f"5. {keyword} 개발 시 자주 사용하는 패턴",
         ])
 
-    # 목차 응답
-    if "목차" in prompt:
-        return "\n".join([
-            f"1. {keyword}란?",
-            f"2. {keyword}를 사용하는 이유",
-            f"3. {keyword} 기본 구조",
-            f"4. {keyword} 사용 예시",
-            "5. 정리",
-        ])
-
     # SEO 응답
     if "SEO 설명" in prompt:
-        return (
-            f"SEO 설명: {keyword}의 기본 개념과 실무 사용 방법을 정리한 글입니다.\n"
-            f"태그: {keyword}, IT, 개발, 실무정리, 웹개발"
-        )
+        return f"SEO 설명: {keyword}에 대해 쉽게 정리한 블로그 글입니다.\n태그: {keyword}, 블로그, 정보, 후기, 정리"
 
     # 기본 본문 응답
-    return f"""※ 실제 프로젝트를 진행하며 얻은 지식을 정리한 내용입니다.
-※ 이론적인 내용보단 실무에서 사용하는 방식 위주로 작성하였습니다.
-※ 잘못된 내용이 있다면 댓글로 지적 부탁드리겠습니다.
+    return f"""{keyword}에 대해 정리해보겠습니다.
 
-1. {keyword}란?
+쉽게 얘기하면, 이 주제는 처음 볼 때 어렵게 느껴질 수 있지만 핵심만 잡으면 생각보다 단순합니다.
 
-1) {keyword}는 개발 과정에서 특정 문제를 해결하거나 기능을 구현할 때 사용하는 기술입니다.
-2) 쉽게 얘기하면, 반복해서 작성해야 하는 작업을 정리된 방식으로 처리하도록 도와주는 도구라고 볼 수 있습니다.
-3) 실무에서는 코드 구조를 단순하게 만들고 유지보수를 편하게 하기 위해 사용하는 경우가 많습니다.
+예를 들어 실제로 사용할 상황을 먼저 떠올리면 이해가 훨씬 쉽습니다. 무엇을 알아야 하는지, 어떤 점을 조심해야 하는지, 내가 직접 적용할 때 어떤 기준으로 판단하면 되는지를 중심으로 보면 됩니다.
 
-2. {keyword}를 사용하는 이유
-
-1) 작업 흐름을 정리하기 좋습니다.
-1-1. 기능별 역할을 나눠서 작성할 수 있습니다.
-1-2. 예를 들어 화면, 서버, DB 처리 로직을 분리하면 수정할 때 확인해야 할 범위가 줄어듭니다.
-
-2) 실무 적용이 쉽습니다.
-2-1. 기본 개념만 이해하면 기존 프로젝트에도 단계적으로 적용할 수 있습니다.
-2-2. 문제가 발생했을 때 원인을 추적하기도 비교적 편합니다.
-
-3. 실무에서 사용하는 방식
-
-1) 먼저 {keyword}가 필요한 상황인지 확인합니다.
-2) 그 다음 작은 예제 코드로 동작 방식을 확인합니다.
-3) 마지막으로 실제 프로젝트 구조에 맞게 적용합니다.
-
-4. 정리
-
-1) {keyword}는 개념만 보는 것보다 직접 적용해보는 것이 중요합니다.
-2) 처음에는 작은 기능부터 테스트하는 방식이 좋습니다.
-3) 이후 프로젝트 구조에 맞춰 조금씩 확장하면 됩니다."""
+정리하면 {keyword}는 단순히 정보만 보는 것보다 내 상황에 맞게 해석하는 것이 중요합니다. 필요한 부분부터 확인하고, 실제로 써볼 수 있는 방식으로 접근하면 더 자연스럽게 이해할 수 있습니다."""
 
 
 def extract_prompt_value(prompt: str, key: str) -> str:

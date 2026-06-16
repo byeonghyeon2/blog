@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/style.css?v=20260611-7">
+    <link rel="stylesheet" href="/assets/css/style.css?v=20260616-4">
 </head>
 <body>
 
@@ -17,7 +17,7 @@
             <div class="topbar-logo">✍</div>
             <div>
                 <h1>블로그 자동 작성</h1>
-                <p>IT 기술 글 생성 · 검수 · Tistory 발행 도구</p>
+                <p>카테고리별 블로그 글 생성 · 수정 · Tistory 발행 도구</p>
             </div>
         </div>
         <nav>
@@ -88,7 +88,7 @@
                                 <th class="col-id">ID</th>
                                 <th class="col-title">제목</th>
                                 <th class="col-kw">키워드</th>
-                                <th class="col-type">유형</th>
+                                <th class="col-type">카테고리</th>
                                 <th class="col-status">상태</th>
                                 <th class="col-date">생성일</th>
                             </tr>
@@ -119,23 +119,23 @@
                 </div>
 
                 <div class="field-group">
-                    <label for="keyword">키워드</label>
+                    <label for="keyword">주제 / 키워드</label>
                     <input
                         id="keyword"
                         type="text"
-                        placeholder="예: FastAPI MySQL 연동"
+                        placeholder="예: 제주도 2박 3일 여행, 금리 인하, 성수동 맛집"
                         autocomplete="off"
                     >
                 </div>
 
                 <div class="field-group">
-                    <label for="postType">글 유형</label>
+                    <label for="postType">카테고리</label>
                     <select id="postType">
-                        <option value="CONCEPT">개념 설명형</option>
-                        <option value="TOOL_GUIDE">툴 사용법형</option>
-                        <option value="ERROR_FIX">에러 해결형</option>
-                        <option value="COMPARE">비교 분석형</option>
-                        <option value="CODE_EXAMPLE">예제 코드형</option>
+                        <option value="IT">IT / 기술</option>
+                        <option value="FINANCE">금융 / 재테크</option>
+                        <option value="FOOD">맛집 / 음식</option>
+                        <option value="TRAVEL">여행 / 장소</option>
+                        <option value="LIFESTYLE">생활 / 리뷰</option>
                     </select>
                 </div>
 
@@ -164,7 +164,6 @@
                     <select id="generationMode">
                         <option value="ALL">전체 생성</option>
                         <option value="TITLE">제목 생성</option>
-                        <option value="OUTLINE">목차 생성</option>
                         <option value="CONTENT">본문 생성</option>
                         <option value="SEO">SEO 생성</option>
                     </select>
@@ -191,6 +190,19 @@
                 <div id="currentPostBadge" class="current-post-badge" style="display:none;">
                     <span>편집 중: Post #<span id="currentPostIdLabel"></span></span>
                     <button id="btnNewPost" class="btn btn--ghost btn--sm">새 글</button>
+                </div>
+
+                <!-- 이 앱에서 발생한 OpenAI 예상 비용을 월간 예산 기준으로 표시합니다. -->
+                <div class="token-usage-card">
+                    <div class="token-usage-head">
+                        <span>OpenAI 예산</span>
+                        <strong id="tokenUsagePercent">0%</strong>
+                    </div>
+                    <div class="token-progress" aria-hidden="true">
+                        <div id="tokenProgressFill" class="token-progress-fill" style="width:0%"></div>
+                    </div>
+                    <p id="tokenUsageText">$0.00 사용 / $10.00 예산</p>
+                    <small id="tokenUsageDetail">이 앱 로그와 초기 사용분 기준입니다.</small>
                 </div>
             </div>
 
@@ -220,13 +232,8 @@
                 </div>
 
                 <div class="field-group">
-                    <label for="outline">목차</label>
-                    <textarea id="outline" rows="8" placeholder="목차가 여기에 생성됩니다."></textarea>
-                </div>
-
-                <div class="field-group">
                     <label for="contentText">본문</label>
-                    <textarea id="contentText" rows="18" placeholder="본문이 여기에 생성됩니다."></textarea>
+                    <textarea id="contentText" rows="24" placeholder="본문이 여기에 생성됩니다."></textarea>
                 </div>
 
                 <div class="field-group">
@@ -257,7 +264,7 @@
                     <span class="panel-badge">PREVIEW</span>
                 </div>
                 <article id="postPreview" class="post-preview">
-                    <p class="preview-empty">제목, 목차, 본문을 생성하면 이곳에 최종 글 형태로 표시됩니다.</p>
+                    <p class="preview-empty">제목과 본문을 생성하면 이곳에 최종 글 형태로 표시됩니다.</p>
                 </article>
             </section>
         </section>
@@ -287,6 +294,6 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="/assets/js/app.js?v=20260611-7"></script>
+    <script src="/assets/js/app.js?v=20260616-5"></script>
 </body>
 </html>

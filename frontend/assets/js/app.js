@@ -1,8 +1,8 @@
 /**
- * app.js - Tistory IT Blog Writer 프론트엔드 메인 스크립트
+ * app.js - Tistory Blog Writer 프론트엔드 메인 스크립트
  *
  * 담당 기능:
- *  - AI 글 생성 (제목 / 목차 / 본문 / SEO) 호출 및 로딩 표시
+ *  - AI 글 생성 (제목 / 본문 / SEO) 호출 및 로딩 표시
  *  - 글 저장 (POST), 업데이트 (PUT), 삭제 (DELETE)
  *  - 글 목록 조회 (키워드 검색 + 상태 필터)
  *  - 대시보드 요약 카운트 갱신
@@ -54,6 +54,8 @@ function showView(viewName) {
     if (window.location.hash !== `#${normalized === 'create' ? 'create' : 'posts'}`) {
         window.location.hash = normalized === 'create' ? 'create' : 'posts';
     }
+
+    syncCreatePanelHeights();
 }
 
 // ───────────────────────────────────────────
@@ -122,15 +124,15 @@ function setGeneratedTitle(result) {
 }
 
 /**
- * 생성 API 공통 요청 본문(키워드 + 글 유형)을 반환합니다.
+ * 생성 API 공통 요청 본문(주제/키워드 + 카테고리)을 반환합니다.
  * 호출 전 keyword가 비어있는지 확인하세요.
  *
- * @returns {{ keyword: string, post_type: string }}
+ * @returns {{ keyword: string, category: string }}
  */
 function requestBody() {
     return {
         keyword:   $('#keyword').val().trim(),
-        post_type: $('#postType').val(),
+        category: $('#postType').val(),
         reference_image_data_url: referenceImageDataUrl,
     };
 }
@@ -158,32 +160,6 @@ function previewTextToHtml(value) {
 }
 
 /**
- * 목차 텍스트를 실제 블로그 본문 안의 목차처럼 렌더링합니다.
- *
- * @param {string} value - 목차 원본 텍스트
- * @returns {string} 미리보기용 목차 HTML
- */
-function previewOutlineToHtml(value) {
-    const lines = String(value || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-    if (!lines.length) return '';
-
-    const items = lines
-        .map((line) => `<li>${escapeHtml(line)}</li>`)
-        .join('');
-
-    return `
-        <nav class="preview-toc" aria-label="글 목차">
-            <strong>목차</strong>
-            <ol>${items}</ol>
-        </nav>
-    `;
-}
-
-/**
  * SEO 결과에서 태그처럼 보이는 값을 추출해 글 하단에 가볍게 표시합니다.
  * SEO 설명 전체를 카드로 보여주지 않고, 실제 블로그의 태그 영역처럼 보이게 하기 위함입니다.
  *
@@ -207,25 +183,42 @@ function previewSeoToHtml(value) {
 }
 
 /**
- * 현재 작성 영역의 제목/목차/본문/SEO 값을 조합해 최종 글 미리보기를 갱신합니다.
+ * 현재 작성 영역의 제목/본문/SEO 값을 조합해 최종 글 미리보기를 갱신합니다.
  */
 function updatePostPreview() {
     const title = getFirstTitle();
-    const outline = $('#outline').val().trim();
     const content = $('#contentText').val().trim();
     const seo = $('#seo').val().trim();
 
-    if (!title && !outline && !content && !seo) {
-        $('#postPreview').html('<p class="preview-empty">제목, 목차, 본문을 생성하면 이곳에 최종 글 형태로 표시됩니다.</p>');
+    if (!title && !content && !seo) {
+        $('#postPreview').html('<p class="preview-empty">제목과 본문을 생성하면 이곳에 최종 글 형태로 표시됩니다.</p>');
         return;
     }
 
     $('#postPreview').html(`
         ${title ? `<h1>${escapeHtml(title)}</h1>` : ''}
-        ${outline ? previewOutlineToHtml(outline) : ''}
         ${content ? `<div class="preview-content">${previewTextToHtml(content)}</div>` : ''}
         ${seo ? previewSeoToHtml(seo) : ''}
     `);
+
+    syncCreatePanelHeights();
+}
+
+/**
+ * 글 작성 화면의 좌측 "글 생성" 패널 높이를 우측 "생성 결과" 패널 높이에 맞춥니다.
+ * 좁은 화면에서 두 패널이 세로로 쌓여도 시각적인 길이가 어긋나지 않도록 보정합니다.
+ */
+function syncCreatePanelHeights() {
+    window.requestAnimationFrame(() => {
+        const $inputPanel = $('.panel--input');
+        const $editorPanel = $('.panel--editor');
+
+        if (!$inputPanel.length || !$editorPanel.length || !$('#createView').is(':visible')) {
+            return;
+        }
+
+        $inputPanel.css('min-height', `${Math.ceil($editorPanel.outerHeight())}px`);
+    });
 }
 
 /**
@@ -280,16 +273,16 @@ function statusLabel(status) {
 /**
  * 글 유형 코드를 한글 표시명으로 변환합니다.
  *
- * @param {string} type - 유형 코드 (CONCEPT, TOOL_GUIDE, ...)
+ * @param {string} type - 내부 카테고리 코드
  * @returns {string} 한글 표시명
  */
 function typeLabel(type) {
     const map = {
-        CONCEPT:      '개념설명',
-        TOOL_GUIDE:   '툴가이드',
-        ERROR_FIX:    '에러해결',
-        COMPARE:      '비교분석',
-        CODE_EXAMPLE: '예제코드',
+        IT:        'IT / 기술',
+        FINANCE:   '금융 / 재테크',
+        FOOD:      '맛집 / 음식',
+        TRAVEL:    '여행 / 장소',
+        LIFESTYLE: '생활 / 리뷰',
     };
     return map[type] || type;
 }
@@ -311,6 +304,34 @@ async function loadDashboard() {
         $('#publishedCount').text(data.status_counts.PUBLISHED || 0);
     } catch (err) {
         console.error('[loadDashboard] 대시보드 로드 실패:', err);
+    }
+}
+
+/**
+ * 이번 달 앱 내부 AI 토큰/예상 비용 사용량을 불러와 글 생성 패널 하단에 표시합니다.
+ * OpenAI 계정 전체 사용량이 아니라 이 앱의 generation_logs와 초기 보정값 기준입니다.
+ */
+async function loadTokenUsage() {
+    try {
+        const data = await $.getJSON(`${API}/api/dashboard/token-usage`);
+        const used = Number(data.used_tokens || 0);
+        const percent = Number(data.usage_percent || 0);
+        const usedCost = Number(data.used_cost_usd || 0);
+        const budget = Number(data.budget_usd || 0);
+        const remaining = Number(data.remaining_usd || 0);
+        const cappedPercent = Math.min(percent, 100);
+
+        $('#tokenUsagePercent').text(`${percent.toFixed(1)}%`);
+        $('#tokenProgressFill').css('width', `${cappedPercent}%`);
+        $('#tokenUsageText').text(
+            `${data.period} $${usedCost.toFixed(2)} 사용 / $${budget.toFixed(2)} 예산`
+        );
+        $('#tokenUsageDetail').text(
+            `잔여 $${remaining.toFixed(2)} · 앱 토큰 ${used.toLocaleString()} tokens`
+        );
+    } catch (err) {
+        console.error('[loadTokenUsage] 토큰 사용량 로드 실패:', err);
+        $('#tokenUsageText').text('예산 사용량을 불러오지 못했습니다.');
     }
 }
 
@@ -354,7 +375,7 @@ async function loadPosts(keyword = '', status = '') {
                     </button>
                 </td>
                 <td style="color:var(--color-text-muted);">${escapeHtml(post.topic_keyword)}</td>
-                <td><span class="type-badge">${typeLabel(post.post_type)}</span></td>
+                <td><span class="type-badge">${typeLabel(post.category)}</span></td>
                 <td><span class="status-badge status-badge--${post.status}">${statusLabel(post.status)}</span></td>
                 <td style="color:var(--color-text-muted);font-size:12px;white-space:nowrap;">
                     ${new Date(post.created_at).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })}
@@ -409,9 +430,8 @@ async function openPost(postId) {
 
         // 편집 패널 각 필드에 데이터 채우기
         $('#keyword').val(post.topic_keyword);
-        $('#postType').val(post.post_type);
+        $('#postType').val(post.category);
         $('#title').val(post.title);
-        $('#outline').val(post.outline   || '');
         $('#contentText').val(post.content_text || '');
 
         // SEO 설명(첫 줄)과 태그(나머지)를 하나의 textarea에 표시
@@ -459,48 +479,23 @@ async function generateTitle() {
 }
 
 /**
- * 선택된 제목을 기준으로 번호형 목차를 AI로 생성합니다.
- * 제목 textarea가 비어있으면 중단합니다.
- *
- * @returns {Promise<string|undefined>} 생성된 목차 텍스트 (유효성 실패 시 undefined)
- */
-async function generateOutline() {
-    const base  = requestBody();
-    const title = getFirstTitle();
-
-    if (!base.keyword || !title) {
-        toast('키워드와 제목이 필요합니다.', true);
-        return;
-    }
-
-    const data = await postJson(`${API}/api/ai/outline`, { ...base, title });
-    $('#outline').val(data.result);
-    $('#title').val(title);
-    updatePostPreview();
-    toast('목차를 생성했습니다.');
-    return data.result;
-}
-
-/**
- * 목차를 기준으로 실제 블로그 본문을 AI로 생성합니다.
- * 키워드, 제목, 목차 세 가지가 모두 필요합니다.
+ * 제목과 주제/키워드를 기준으로 실제 블로그 본문을 AI로 생성합니다.
+ * 주제/키워드와 제목이 모두 필요합니다.
  *
  * @returns {Promise<string|undefined>} 생성된 본문 텍스트 (유효성 실패 시 undefined)
  */
 async function generateContent() {
-    const base    = requestBody();
-    const title   = getFirstTitle();
-    const outline = $('#outline').val().trim();
+    const base  = requestBody();
+    const title = getFirstTitle();
 
-    if (!base.keyword || !title || !outline) {
-        toast('키워드, 제목, 목차가 모두 필요합니다.', true);
+    if (!base.keyword || !title) {
+        toast('주제/키워드와 제목이 필요합니다.', true);
         return;
     }
 
     const data = await postJson(`${API}/api/ai/content`, {
         ...base,
         title,
-        outline,
         include_code:  $('#includeCode').is(':checked'),
         target_length: Number($('#targetLength').val()) || 2500,
     });
@@ -539,7 +534,7 @@ async function generateSeo() {
 
 /**
  * 생성 항목 드롭다운 선택값에 따라 필요한 AI API를 순서대로 호출합니다.
- * ALL이면 제목 → 목차 → 본문 → SEO 순서로 전체 생성합니다.
+ * ALL이면 제목 → 본문 → SEO 순서로 전체 생성합니다.
  * 각 단계 실패 시 나머지 단계를 중단하지 않고 에러 토스트만 표시합니다.
  */
 async function generateSelected() {
@@ -549,10 +544,6 @@ async function generateSelected() {
     try {
         if (mode === 'TITLE') {
             await generateTitle();
-            return;
-        }
-        if (mode === 'OUTLINE') {
-            await generateOutline();
             return;
         }
         if (mode === 'CONTENT') {
@@ -568,9 +559,6 @@ async function generateSelected() {
         setLoading(true, '제목 생성 중…');
         await generateTitle();
 
-        setLoading(true, '목차 생성 중…');
-        await generateOutline();
-
         setLoading(true, '본문 생성 중…');
         await generateContent();
 
@@ -585,6 +573,7 @@ async function generateSelected() {
         console.error('[generateSelected] 생성 오류:', err);
     } finally {
         setLoading(false);
+        await loadTokenUsage();
     }
 }
 
@@ -597,7 +586,6 @@ async function generateSelected() {
 function modeToLoadingMessage(mode) {
     const map = {
         TITLE:   '제목 생성 중…',
-        OUTLINE: '목차 생성 중…',
         CONTENT: '본문 생성 중…',
         SEO:     'SEO 생성 중…',
         ALL:     'AI가 전체 글을 생성하고 있습니다…',
@@ -626,9 +614,8 @@ async function savePost() {
     const payload = {
         title,
         topic_keyword:   keyword,
-        post_type:       $('#postType').val(),
+        category:        $('#postType').val(),
         status:          $('#postStatus').val(),
-        outline:         $('#outline').val(),
         content_text:    $('#contentText').val(),
         seo_description: seoText.split('\n')[0] || '',
         tags_text:       seoText.split('\n').slice(1).join('\n'),
@@ -699,9 +686,8 @@ async function deleteCurrentPost() {
  */
 function resetEditor() {
     $('#keyword').val('');
-    $('#postType').val('CONCEPT');
+    $('#postType').val('IT');
     $('#title').val('');
-    $('#outline').val('');
     $('#contentText').val('');
     $('#seo').val('');
     clearReferenceImage();
@@ -914,7 +900,12 @@ $('#referenceImage').on('change', function () {
 $('#btnClearReferenceImage').on('click', clearReferenceImage);
 
 // 작성 중에도 미리보기가 계속 갱신되도록 처리합니다.
-$('#title, #outline, #contentText, #seo').on('input', updatePostPreview);
+$('#title, #contentText, #seo').on('input', () => {
+    updatePostPreview();
+    syncCreatePanelHeights();
+});
+
+$(window).on('resize', syncCreatePanelHeights);
 
 // ───────────────────────────────────────────
 // 초기 로드
@@ -926,7 +917,9 @@ $('#title, #outline, #contentText, #seo').on('input', updatePostPreview);
  */
 $(async function () {
     await loadDashboard();
+    await loadTokenUsage();
     await loadPosts();
     updatePostPreview();
     showView(window.location.hash === '#create' ? 'create' : 'posts');
+    syncCreatePanelHeights();
 });

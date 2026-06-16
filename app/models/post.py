@@ -17,13 +17,13 @@ class PostStatus(StrEnum):
     ARCHIVED = "ARCHIVED"
 
 
-class PostType(StrEnum):
-    # IT 글의 성격에 따라 다른 프롬프트 템플릿을 적용합니다.
-    CONCEPT = "CONCEPT"
-    TOOL_GUIDE = "TOOL_GUIDE"
-    ERROR_FIX = "ERROR_FIX"
-    COMPARE = "COMPARE"
-    CODE_EXAMPLE = "CODE_EXAMPLE"
+class BlogCategory(StrEnum):
+    # 블로그 글의 주제 카테고리입니다.
+    IT = "IT"
+    FINANCE = "FINANCE"
+    FOOD = "FOOD"
+    TRAVEL = "TRAVEL"
+    LIFESTYLE = "LIFESTYLE"
 
 
 class Post(Base):
@@ -31,12 +31,10 @@ class Post(Base):
     __tablename__ = "posts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categories.id"))
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     topic_keyword: Mapped[str] = mapped_column(String(255), nullable=False)
-    post_type: Mapped[PostType] = mapped_column(Enum(PostType), default=PostType.CONCEPT)
+    category: Mapped[BlogCategory] = mapped_column(Enum(BlogCategory), default=BlogCategory.IT)
     status: Mapped[PostStatus] = mapped_column(Enum(PostStatus), default=PostStatus.DRAFT)
-    outline: Mapped[Optional[str]] = mapped_column(Text)
     content_text: Mapped[Optional[str]] = mapped_column(Text)
     content_html: Mapped[Optional[str]] = mapped_column(Text)
     seo_description: Mapped[Optional[str]] = mapped_column(String(300))
@@ -46,7 +44,6 @@ class Post(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    category = relationship("Category")
     versions = relationship("PostVersion", cascade="all, delete-orphan")
 
 

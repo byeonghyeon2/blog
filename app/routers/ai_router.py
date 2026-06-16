@@ -3,7 +3,6 @@ ai_router.py - AI 글 생성 관련 API 엔드포인트
 
 엔드포인트:
     POST /api/ai/title        - 제목 후보 생성
-    POST /api/ai/outline      - 목차 생성
     POST /api/ai/content      - 본문 생성
     POST /api/ai/seo          - SEO 설명 및 태그 생성
     POST /api/ai/html-convert - 텍스트 → Tistory HTML 변환
@@ -13,19 +12,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from openai import APIConnectionError, OpenAIError, RateLimitError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.generation_log import GenerationLog
 from app.schemas.ai_schema import (
     AiResponse,
     ContentRequest,
-    OutlineRequest,
     SeoRequest,
     TitleRequest,
 )
 from app.services.ai_service import (
+    GeneratedText,
     content_prompt,
-    generate_text,
-    outline_prompt,
+    generate_text_with_usage,
     seo_prompt,
     title_prompt,
 )
@@ -35,13 +34,13 @@ from app.services.html_service import text_to_tistory_html
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 
-def run_ai_generation(prompt: str, reference_image_data_url: str | None = None) -> str:
+def run_ai_generation(prompt: str, reference_image_data_url: str | None = None) -> GeneratedText:
     """
     OpenAI 호출을 실행하고, 사용자가 이해할 수 있는 오류 메시지로 변환합니다.
     결제/쿼터/네트워크 문제를 500 대신 명확한 API 오류로 내려주기 위한 래퍼입니다.
     """
     try:
-        return generate_text(prompt, reference_image_data_url)
+        return generate_text_with_usage(prompt, reference_image_data_url)
     except RateLimitError as exc:
         raise HTTPException(
             status_code=402,
@@ -63,7 +62,7 @@ def save_generation_log(
     db: Session,
     generation_type: str,
     prompt: str,
-    response: str,
+    response: GeneratedText,
 ) -> None:
     """
     AI 호출 결과(프롬프트 + 응답)를 generation_logs 테이블에 저장합니다.
@@ -71,15 +70,24 @@ def save_generation_log(
 
     Args:
         db:              SQLAlchemy DB 세션
-        generation_type: 생성 유형 코드 (TITLE / OUTLINE / CONTENT / SEO)
+        generation_type: 생성 유형 코드 (TITLE / CONTENT / SEO)
         prompt:          OpenAI에 전달한 프롬프트 원문
         response:        OpenAI가 반환한 응답 원문
     """
+    estimated_cost = (
+        (response.prompt_tokens / 1_000_000) * settings.openai_input_price_per_1m_tokens
+        + (response.completion_tokens / 1_000_000) * settings.openai_output_price_per_1m_tokens
+    )
     db.add(
         GenerationLog(
             generation_type=generation_type,
             prompt=prompt,
-            response=response,
+            response=response.text,
+            model_name=settings.openai_model,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            total_tokens=response.total_tokens,
+            estimated_cost_usd=estimated_cost,
         )
     )
     db.commit()
@@ -91,43 +99,30 @@ def generate_title(request: TitleRequest, db: Session = Depends(get_db)):
     키워드와 글 유형을 기반으로 블로그 제목 후보 5개를 생성합니다.
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
-    prompt = title_prompt(request.keyword, request.post_type, bool(request.reference_image_data_url))
-    result = run_ai_generation(prompt, request.reference_image_data_url)
-    save_generation_log(db, "TITLE", prompt, result)
-    return AiResponse(result=result)
-
-
-@router.post("/outline", response_model=AiResponse)
-def generate_outline(request: OutlineRequest, db: Session = Depends(get_db)):
-    """
-    선택한 제목과 키워드를 기준으로 번호형 목차를 생성합니다.
-    생성 결과와 프롬프트는 이력으로 저장됩니다.
-    """
-    prompt = outline_prompt(request.title, request.keyword, request.post_type, bool(request.reference_image_data_url))
-    result = run_ai_generation(prompt, request.reference_image_data_url)
-    save_generation_log(db, "OUTLINE", prompt, result)
-    return AiResponse(result=result)
+    prompt = title_prompt(request.keyword, request.category, bool(request.reference_image_data_url))
+    generated = run_ai_generation(prompt, request.reference_image_data_url)
+    save_generation_log(db, "TITLE", prompt, generated)
+    return AiResponse(result=generated.text)
 
 
 @router.post("/content", response_model=AiResponse)
 def generate_content(request: ContentRequest, db: Session = Depends(get_db)):
     """
-    목차를 기준으로 실제 블로그 본문을 생성합니다.
+    제목과 주제/키워드를 기준으로 실제 블로그 본문을 생성합니다.
     예제 코드 포함 여부와 목표 글자 수를 파라미터로 받습니다.
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
     prompt = content_prompt(
         request.title,
         request.keyword,
-        request.post_type,
-        request.outline,
+        request.category,
         request.include_code,
         request.target_length,
         bool(request.reference_image_data_url),
     )
-    result = run_ai_generation(prompt, request.reference_image_data_url)
-    save_generation_log(db, "CONTENT", prompt, result)
-    return AiResponse(result=result)
+    generated = run_ai_generation(prompt, request.reference_image_data_url)
+    save_generation_log(db, "CONTENT", prompt, generated)
+    return AiResponse(result=generated.text)
 
 
 @router.post("/seo", response_model=AiResponse)
@@ -137,9 +132,9 @@ def generate_seo(request: SeoRequest, db: Session = Depends(get_db)):
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
     prompt = seo_prompt(request.title, request.keyword, request.content_text)
-    result = run_ai_generation(prompt)
-    save_generation_log(db, "SEO", prompt, result)
-    return AiResponse(result=result)
+    generated = run_ai_generation(prompt)
+    save_generation_log(db, "SEO", prompt, generated)
+    return AiResponse(result=generated.text)
 
 
 @router.post("/html-convert", response_model=AiResponse)

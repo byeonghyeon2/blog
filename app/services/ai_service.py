@@ -29,12 +29,60 @@ STYLE_RULES = """
 - 문장은 너무 길게 늘이지 말고 블로그 글처럼 자연스럽게 작성
 """.strip()
 
+NAVER_BLOG_RULES = """
+- 네이버 블로그에 바로 복사해서 붙여넣기 좋은 일반 텍스트로 작성
+- 검색될 만한 핵심 표현은 제목, 첫 문단, 중간 소제목에 자연스럽게 한 번씩만 배치
+- 긴 줄글보다 짧은 문단, 사진 삽입 위치, 간단한 코멘트, 정보 목록을 섞어서 작성
+- 문단은 2~4문장 정도로 짧게 끊고, 모바일에서 읽기 좋게 여백을 둔 느낌으로 구성
+- 과도한 키워드 반복, 광고 문구, 이모지 남발, 억지 후기체는 피하기
+- 마지막에는 태그 후보를 본문과 분리해서 적기 좋은 단어 중심으로 구성
+""".strip()
+
+MEMO_REWRITE_RULES = """
+- 사용자 작성 메모는 원문이 아니라 글감과 의도 파악용 자료로만 사용
+- 사용자가 쓴 문장을 그대로 복사하거나 문단 순서를 그대로 따라가지 말 것
+- 메모의 말투, 감정, 관점은 유지하되 표현은 블로그 독자가 이해하기 쉬운 단어로 다시 작성
+- 애매한 표현, 줄임말, 혼잣말은 자연스러운 설명 문장으로 풀어쓰기
+- 핵심 팁은 살리고 중복되거나 거친 표현은 덜어내기
+- 사용자가 쓴 표현 중 꼭 필요한 표현만 일부 살리고, 전체 문장은 새로 구성
+""".strip()
+
 CATEGORY_LABELS: dict[BlogCategory, str] = {
     BlogCategory.IT:        "IT / 기술",
     BlogCategory.FINANCE:   "금융 / 재테크",
     BlogCategory.FOOD:      "맛집 / 음식",
     BlogCategory.TRAVEL:    "여행 / 장소",
     BlogCategory.LIFESTYLE: "생활 / 리뷰",
+}
+
+CATEGORY_FORMAT_RULES: dict[BlogCategory, str] = {
+    BlogCategory.IT: """
+- 문제 상황 또는 사용 계기를 짧게 설명
+- [사진/화면 1 삽입] 뒤에 화면에서 봐야 할 포인트를 한두 문장으로 설명
+- 설정 방법, 주의점, 체크리스트를 목록으로 정리
+- 코드가 필요하면 아주 짧게 넣고 바로 아래에 쉬운 설명 추가
+""".strip(),
+    BlogCategory.FINANCE: """
+- 핵심 내용을 먼저 요약하고, 조건/장점/리스크를 분리
+- 숫자나 조건은 목록으로 정리해서 오해를 줄이기
+- 투자 권유처럼 쓰지 말고 판단 기준과 주의점 중심으로 작성
+""".strip(),
+    BlogCategory.FOOD: """
+- 사진 위주 맛집 글처럼 구성: 사진 위치 표시 → 짧은 코멘트 → 정보 목록
+- 맛, 분위기, 웨이팅, 가격대, 추천 메뉴, 재방문 의사를 분리해서 작성
+- 말투는 과장 없이 담백하게, 직접 다녀온 사람이 알려주는 느낌으로 작성
+- 참고 스타일은 담백한 개인 맛집 기록 느낌만 반영하고 문장이나 표현은 따라 쓰지 않기
+""".strip(),
+    BlogCategory.TRAVEL: """
+- 동선, 시간대, 비용, 준비물, 주의점을 목록으로 정리
+- 사진 위치마다 그 장면에서 독자가 알아야 할 팁을 짧게 덧붙이기
+- 감상은 담백하게 쓰고 실제 이동/방문에 도움이 되는 정보 중심으로 작성
+""".strip(),
+    BlogCategory.LIFESTYLE: """
+- 사용 계기, 실제 사용감, 장점, 아쉬운 점, 추천 대상을 분리
+- 사진 위치마다 어떤 부분을 보면 되는지 짧은 코멘트 추가
+- 협찬 느낌보다 개인 기록과 실사용 후기처럼 담백하게 작성
+""".strip(),
 }
 
 
@@ -62,15 +110,23 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text or "") // 2)
 
 
-def generate_text(prompt: str, reference_image_data_url: str | None = None) -> str:
+def generate_text(prompt: str, reference_image_data_urls: list[str] | str | None = None) -> str:
     """
     기존 호출부 호환을 위해 텍스트만 반환합니다.
     토큰 사용량까지 필요한 곳에서는 generate_text_with_usage를 사용합니다.
     """
-    return generate_text_with_usage(prompt, reference_image_data_url).text
+    return generate_text_with_usage(prompt, reference_image_data_urls).text
 
 
-def generate_text_with_usage(prompt: str, reference_image_data_url: str | None = None) -> GeneratedText:
+def normalize_image_urls(reference_image_data_urls: list[str] | str | None = None) -> list[str]:
+    if not reference_image_data_urls:
+        return []
+    if isinstance(reference_image_data_urls, str):
+        return [reference_image_data_urls]
+    return [url for url in reference_image_data_urls if url]
+
+
+def generate_text_with_usage(prompt: str, reference_image_data_urls: list[str] | str | None = None) -> GeneratedText:
     """
     OpenAI Responses API를 호출하여 텍스트를 생성합니다.
     API 키가 설정되어 있지 않으면 fallback_response를 반환합니다.
@@ -97,24 +153,26 @@ def generate_text_with_usage(prompt: str, reference_image_data_url: str | None =
         )
 
     client = OpenAI(api_key=settings.openai_api_key)
+    image_urls = normalize_image_urls(reference_image_data_urls)
     user_content: str | list[dict[str, object]]
-    if reference_image_data_url:
-        user_content = [
-            {"type": "text", "text": prompt},
+    if image_urls:
+        user_content = [{"type": "text", "text": prompt}]
+        user_content.extend(
             {
                 "type": "image_url",
                 "image_url": {
-                    "url": reference_image_data_url,
+                    "url": image_url,
                 },
-            },
-        ]
+            }
+            for image_url in image_urls
+        )
     else:
         user_content = prompt
 
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=[
-            {"role": "system", "content": "너는 티스토리 블로그 글을 작성하는 한국어 블로거다."},
+            {"role": "system", "content": "너는 네이버 블로그 글을 작성하는 한국어 블로거다."},
             {"role": "user", "content": user_content},
         ],
         temperature=0.4,
@@ -133,21 +191,24 @@ def generate_text_with_usage(prompt: str, reference_image_data_url: str | None =
 # 프롬프트 생성 함수
 # ───────────────────────────────────────────
 
-def reference_image_instruction(has_reference_image: bool) -> str:
+def reference_image_instruction(image_count: int = 0) -> str:
     """
     사용자가 올린 참고 이미지를 어떻게 활용할지 프롬프트에 추가합니다.
-    이미지의 레이아웃/정보 배치만 참고하고 문체는 기존 스타일을 유지하도록 제한합니다.
+    이미지 내용과 사용자가 적은 메모를 함께 해석하되, 말투는 사용자 메모를 우선하도록 제한합니다.
     """
-    if not has_reference_image:
+    if image_count <= 0:
         return ""
 
     return f"""
 
 참고 방식:
-- 첨부된 참고 이미지는 글의 화면 구성, 정보 배치, 섹션 흐름만 참고
-- 이미지 안의 문장, 말투, 표현, 사례를 그대로 따라 쓰지 말 것
-- 참고 이미지의 디자인 요소를 설명하지 말고, 글의 자연스러운 흐름에만 반영
-- 최종 말투는 반드시 아래 말투 규칙을 우선 적용
+- 첨부된 참고 이미지 {image_count}장을 각각 분석해서 글의 소재로 활용
+- 사용자가 작성 메모에서 사진 이야기를 했다면 이미지에서 확인되는 내용을 자연스럽게 보강
+- 이미지 속 텍스트나 정보가 불확실하면 단정하지 말고 "사진상으로는", "보기에는"처럼 조심스럽게 표현
+- 본문에는 적절한 위치마다 [사진 1 삽입: 사진 내용에 맞는 짧은 설명] 형식의 줄을 넣기
+- 여러 장이면 사진 번호 순서대로 배치하되, 내용 흐름에 맞게 위치를 조정
+- 사진 삽입 줄 바로 아래에는 1~2문장 정도의 짧은 코멘트를 작성
+- 최종 말투와 강조점은 사용자 작성 메모에서 파악하되, 문장은 그대로 가져오지 말고 새로 다듬어 작성
 """.rstrip()
 
 
@@ -166,29 +227,37 @@ def category_instruction(category: BlogCategory) -> str:
     return instructions[category]
 
 
-def title_prompt(keyword: str, category: BlogCategory, has_reference_image: bool = False) -> str:
+def title_prompt(keyword: str, category: BlogCategory, image_count: int = 0) -> str:
     """
-    주제/키워드와 카테고리를 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
+    사용자의 작성 메모와 카테고리를 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
 
     Args:
-        keyword:   사용자가 입력한 핵심 키워드
+        keyword:   사용자가 입력한 작성 메모
         category: 카테고리
 
     Returns:
         완성된 프롬프트 문자열
     """
     return f"""
-아래 조건에 맞춰 티스토리 블로그 제목 후보 5개를 작성해줘.
+아래 조건에 맞춰 네이버 블로그 제목 후보 5개를 작성해줘.
 
-주제/키워드: {keyword}
+사용자 작성 메모:
+{keyword}
+
 카테고리: {CATEGORY_LABELS[category]}
 카테고리 작성 방향: {category_instruction(category)}
-{reference_image_instruction(has_reference_image)}
+{reference_image_instruction(image_count)}
 
 말투 규칙:
 {STYLE_RULES}
 
+메모 재작성 규칙:
+{MEMO_REWRITE_RULES}
+
 조건:
+- 네이버 블로그 검색에서 자연스럽게 보일 만한 제목으로 작성
+- 사용자가 쓴 메모에서 핵심 주제, 의도, 감정, 말투를 먼저 파악
+- 메모가 줄글이어도 그 안에서 검색될 만한 핵심어를 뽑아 제목에 반영
 - 제목만 번호 목록으로 작성
 - 독자가 검색할 만한 자연스러운 표현 사용
 - 과장된 제목 금지
@@ -201,14 +270,14 @@ def content_prompt(
     category: BlogCategory,
     include_code: bool,
     target_length: int,
-    has_reference_image: bool = False,
+    image_count: int = 0,
 ) -> str:
     """
-    제목과 주제/키워드를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
+    제목과 사용자 작성 메모를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
 
     Args:
         title:         블로그 제목
-        keyword:       핵심 키워드
+        keyword:       사용자가 입력한 작성 메모
         category:      카테고리
         include_code:  예제 코드 포함 여부
         target_length: 목표 글자 수 (기본 2500자)
@@ -224,31 +293,48 @@ def content_prompt(
     )
 
     return f"""
-아래 조건에 맞춰 티스토리 블로그 본문을 작성해줘.
+아래 조건에 맞춰 네이버 블로그 본문을 작성해줘.
 
 제목: {title}
-주제/키워드: {keyword}
+사용자 작성 메모:
+{keyword}
+
 카테고리: {CATEGORY_LABELS[category]}
 카테고리 작성 방향: {category_instruction(category)}
 목표 길이: 약 {target_length}자
-{reference_image_instruction(has_reference_image)}
+{reference_image_instruction(image_count)}
 
 말투 규칙:
 {STYLE_RULES}
 
+네이버 블로그 작성 규칙:
+{NAVER_BLOG_RULES}
+
+메모 재작성 규칙:
+{MEMO_REWRITE_RULES}
+
+카테고리별 구성 규칙:
+{CATEGORY_FORMAT_RULES[category]}
+
 추가 조건:
+- 사용자가 쓴 메모를 단순 키워드가 아니라 초안 재료로 보고 핵심 주장, 경험, 팁, 감정을 분석
+- 사용자가 알리고 싶어 하는 팁이나 강조점은 빠뜨리지 말고 본문에 자연스럽게 반영
+- 사용자의 말투가 캐주얼하면 캐주얼하게, 담백하면 담백하게 맞춰 쓰되 원문 문장은 그대로 사용하지 말 것
+- 부족한 배경 설명은 일반적으로 알려진 정보와 문맥을 바탕으로 보완하되, 최신 사실이나 불확실한 정보는 단정하지 말 것
+- 사용자가 사진을 언급했거나 참고 이미지가 있으면 이미지에서 확인되는 내용도 본문에 자연스럽게 추가
 - 별도 목차를 만들지 말 것
 - 정해진 양식이나 고정 안내문을 넣지 말 것
-- 주제에 맞게 자연스러운 문단 흐름으로 작성
+- 전체를 긴 줄글로 쓰지 말고, 사진 위치 표시와 짧은 코멘트, 목록형 정보 전달을 섞어서 작성
+- 독자가 바로 이해하기 어려운 단어는 쉬운 표현으로 바꾸고, 필요한 배경 설명을 짧게 덧붙일 것
 - 필요한 경우에만 번호를 사용하고, 번호 형식을 억지로 맞추지 말 것
 - {code_rule}
-- 티스토리에 그대로 붙여넣기 좋은 일반 텍스트로 작성
+- 네이버 블로그에 그대로 붙여넣기 좋은 일반 텍스트로 작성
 """.strip()
 
 
 def seo_prompt(title: str, keyword: str, content_text: str) -> str:
     """
-    완성된 본문을 기반으로 SEO 설명과 Tistory 태그를 요청하는 프롬프트를 생성합니다.
+    완성된 본문을 기반으로 SEO 설명과 네이버 블로그 태그를 요청하는 프롬프트를 생성합니다.
     본문은 너무 길 수 있으므로 앞 3000자만 전달합니다.
 
     Args:
@@ -263,7 +349,9 @@ def seo_prompt(title: str, keyword: str, content_text: str) -> str:
 아래 블로그 글의 SEO 설명과 태그를 작성해줘.
 
 제목: {title}
-핵심 키워드: {keyword}
+사용자 작성 메모:
+{keyword[:1000]}
+
 본문:
 {content_text[:3000]}
 
@@ -289,7 +377,10 @@ def fallback_response(prompt: str) -> str:
         해당 유형의 샘플 텍스트
     """
     keyword = (
-        extract_prompt_value(prompt, "키워드")
+        extract_prompt_block(prompt, "사용자 작성 메모")
+        or extract_prompt_value(prompt, "사용자 작성 메모")
+        or extract_prompt_value(prompt, "작성 메모")
+        or extract_prompt_value(prompt, "키워드")
         or extract_prompt_value(prompt, "핵심 키워드")
         or "FastAPI"
     )
@@ -315,11 +406,16 @@ def fallback_response(prompt: str) -> str:
     # 기본 본문 응답
     return f"""{keyword}에 대해 정리해보겠습니다.
 
-쉽게 얘기하면, 이 주제는 처음 볼 때 어렵게 느껴질 수 있지만 핵심만 잡으면 생각보다 단순합니다.
+[사진 1 삽입: 핵심 장면이나 첫인상을 보여주는 사진]
 
-예를 들어 실제로 사용할 상황을 먼저 떠올리면 이해가 훨씬 쉽습니다. 무엇을 알아야 하는지, 어떤 점을 조심해야 하는지, 내가 직접 적용할 때 어떤 기준으로 판단하면 되는지를 중심으로 보면 됩니다.
+쉽게 얘기하면, 처음 보는 사람도 바로 이해할 수 있게 핵심만 먼저 잡아주는 글입니다.
 
-정리하면 {keyword}는 단순히 정보만 보는 것보다 내 상황에 맞게 해석하는 것이 중요합니다. 필요한 부분부터 확인하고, 실제로 써볼 수 있는 방식으로 접근하면 더 자연스럽게 이해할 수 있습니다."""
+알아두면 좋은 점
+- 먼저 확인해야 할 포인트를 짧게 정리합니다.
+- 실제로 겪을 수 있는 상황을 기준으로 설명합니다.
+- 과하게 좋게만 쓰기보다 아쉬운 점도 담백하게 적습니다.
+
+정리하면, {keyword}는 단순히 정보만 나열하기보다 직접 보는 사람이 바로 판단할 수 있게 구성하는 것이 좋습니다."""
 
 
 def extract_prompt_value(prompt: str, key: str) -> str:
@@ -338,5 +434,18 @@ def extract_prompt_value(prompt: str, key: str) -> str:
         rf"^{re.escape(key)}:\s*(.+)$",
         prompt,
         re.MULTILINE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def extract_prompt_block(prompt: str, key: str) -> str:
+    """
+    프롬프트에서 "키:\n여러 줄 값" 형태의 블록 값을 추출합니다.
+    사용자 작성 메모처럼 줄글 입력을 fallback 응답에 반영하기 위해 사용합니다.
+    """
+    match = re.search(
+        rf"^{re.escape(key)}:\s*\n(.+?)(?:\n\n[가-힣A-Za-z /]+:|\Z)",
+        prompt,
+        re.MULTILINE | re.DOTALL,
     )
     return match.group(1).strip() if match else ""

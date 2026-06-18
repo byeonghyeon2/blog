@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         openai_initial_spend_usd: 앱 외부에서 이미 사용한 금액 보정값
     """
 
-    app_name:       str = "Tistory Blog Writer"
+    app_name:       str = "Naver Blog Writer"
     database_url:   str = "sqlite:///./work/blog_writer.db"
     openai_api_key: str = ""
     openai_model:   str = "gpt-4.1-mini"

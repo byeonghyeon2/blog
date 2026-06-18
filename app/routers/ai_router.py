@@ -5,7 +5,7 @@ ai_router.py - AI 글 생성 관련 API 엔드포인트
     POST /api/ai/title        - 제목 후보 생성
     POST /api/ai/content      - 본문 생성
     POST /api/ai/seo          - SEO 설명 및 태그 생성
-    POST /api/ai/html-convert - 텍스트 → Tistory HTML 변환
+    POST /api/ai/html-convert - 텍스트 → 네이버 블로그용 HTML 변환
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,13 +34,23 @@ from app.services.html_service import text_to_tistory_html
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 
-def run_ai_generation(prompt: str, reference_image_data_url: str | None = None) -> GeneratedText:
+def request_image_urls(
+    reference_image_data_url: str | None = None,
+    reference_image_data_urls: list[str] | None = None,
+) -> list[str]:
+    urls = list(reference_image_data_urls or [])
+    if reference_image_data_url and reference_image_data_url not in urls:
+        urls.insert(0, reference_image_data_url)
+    return urls
+
+
+def run_ai_generation(prompt: str, reference_image_data_urls: list[str] | None = None) -> GeneratedText:
     """
     OpenAI 호출을 실행하고, 사용자가 이해할 수 있는 오류 메시지로 변환합니다.
     결제/쿼터/네트워크 문제를 500 대신 명확한 API 오류로 내려주기 위한 래퍼입니다.
     """
     try:
-        return generate_text_with_usage(prompt, reference_image_data_url)
+        return generate_text_with_usage(prompt, reference_image_data_urls)
     except RateLimitError as exc:
         raise HTTPException(
             status_code=402,
@@ -99,8 +109,9 @@ def generate_title(request: TitleRequest, db: Session = Depends(get_db)):
     키워드와 글 유형을 기반으로 블로그 제목 후보 5개를 생성합니다.
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
-    prompt = title_prompt(request.keyword, request.category, bool(request.reference_image_data_url))
-    generated = run_ai_generation(prompt, request.reference_image_data_url)
+    image_urls = request_image_urls(request.reference_image_data_url, request.reference_image_data_urls)
+    prompt = title_prompt(request.keyword, request.category, len(image_urls))
+    generated = run_ai_generation(prompt, image_urls)
     save_generation_log(db, "TITLE", prompt, generated)
     return AiResponse(result=generated.text)
 
@@ -118,9 +129,12 @@ def generate_content(request: ContentRequest, db: Session = Depends(get_db)):
         request.category,
         request.include_code,
         request.target_length,
-        bool(request.reference_image_data_url),
+        len(request_image_urls(request.reference_image_data_url, request.reference_image_data_urls)),
     )
-    generated = run_ai_generation(prompt, request.reference_image_data_url)
+    generated = run_ai_generation(
+        prompt,
+        request_image_urls(request.reference_image_data_url, request.reference_image_data_urls),
+    )
     save_generation_log(db, "CONTENT", prompt, generated)
     return AiResponse(result=generated.text)
 
@@ -128,7 +142,7 @@ def generate_content(request: ContentRequest, db: Session = Depends(get_db)):
 @router.post("/seo", response_model=AiResponse)
 def generate_seo(request: SeoRequest, db: Session = Depends(get_db)):
     """
-    생성된 본문을 기준으로 SEO 설명(100자 이내)과 Tistory 태그를 생성합니다.
+    생성된 본문을 기준으로 SEO 설명(100자 이내)과 네이버 블로그 태그를 생성합니다.
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
     prompt = seo_prompt(request.title, request.keyword, request.content_text)
@@ -140,7 +154,7 @@ def generate_seo(request: SeoRequest, db: Session = Depends(get_db)):
 @router.post("/html-convert", response_model=AiResponse)
 def convert_html(request: SeoRequest):
     """
-    본문 텍스트를 Tistory 에디터에 붙여넣기 적합한 HTML 구조로 변환합니다.
+    본문 텍스트를 네이버 블로그 에디터에 붙여넣기 적합한 HTML 구조로 변환합니다.
     AI 호출 없이 서버 내 변환 로직만 사용하므로 DB 저장은 하지 않습니다.
 
     Note:

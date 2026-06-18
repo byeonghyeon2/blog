@@ -47,7 +47,7 @@ def ensure_generation_log_token_columns() -> None:
 
 ensure_generation_log_token_columns()
 
-app = FastAPI(title="Tistory Blog Writer")
+app = FastAPI(title="Naver Blog Writer")
 
 # ── CORS 미들웨어 설정 ──────────────────────────────────────────────────
 # 프론트엔드 정적 파일과 API가 같은 서버에서 제공되므로 기본적으로 열려있어도 무방합니다.

@@ -1,10 +1,10 @@
 /**
- * app.js - Tistory Blog Writer 프론트엔드 메인 스크립트
+ * app.js - Naver Blog Writer 프론트엔드 메인 스크립트
  *
  * 담당 기능:
  *  - AI 글 생성 (제목 / 본문 / SEO) 호출 및 로딩 표시
  *  - 글 저장 (POST), 업데이트 (PUT), 삭제 (DELETE)
- *  - 글 목록 조회 (키워드 검색 + 상태 필터)
+ *  - 글 목록 조회 (작성 메모 검색 + 상태 필터)
  *  - 대시보드 요약 카운트 갱신
  *  - 클립보드 복사 (텍스트 / HTML)
  *  - 삭제 확인 모달
@@ -30,11 +30,11 @@ const API = '';
 let currentPostId = null;
 
 /**
- * 사용자가 업로드한 참고 이미지의 data URL입니다.
- * OpenAI 호출 시 이미지 레이아웃/구성 참고용으로 함께 전달합니다.
- * @type {string|null}
+ * 사용자가 업로드한 본문 사진의 data URL 목록입니다.
+ * OpenAI 호출 시 사진 분석과 본문 배치 참고용으로 함께 전달합니다.
+ * @type {string[]}
  */
-let referenceImageDataUrl = null;
+let referenceImageDataUrls = [];
 
 /**
  * 현재 표시할 화면을 전환합니다.
@@ -124,7 +124,7 @@ function setGeneratedTitle(result) {
 }
 
 /**
- * 생성 API 공통 요청 본문(주제/키워드 + 카테고리)을 반환합니다.
+ * 생성 API 공통 요청 본문(사용자 작성 메모 + 카테고리)을 반환합니다.
  * 호출 전 keyword가 비어있는지 확인하세요.
  *
  * @returns {{ keyword: string, category: string }}
@@ -133,8 +133,46 @@ function requestBody() {
     return {
         keyword:   $('#keyword').val().trim(),
         category: $('#postType').val(),
-        reference_image_data_url: referenceImageDataUrl,
+        reference_image_data_urls: referenceImageDataUrls,
     };
+}
+
+/**
+ * 긴 작성 메모를 목록에서 읽기 쉬운 길이로 줄입니다.
+ *
+ * @param {string|null|undefined} value - 원본 작성 메모
+ * @param {number} [maxLength=64] - 표시할 최대 글자 수
+ * @returns {string} 축약된 텍스트
+ */
+function compactMemo(value, maxLength = 64) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, maxLength)}...`;
+}
+
+function photoMarkerToHtml(line) {
+    const match = line.match(/^\[(?:사진|이미지)\s*(\d+)\s*삽입(?::\s*(.*?))?\]$/);
+    if (!match) return '';
+
+    const photoNumber = Number(match[1]);
+    const caption = (match[2] || `사진 ${photoNumber}`).trim();
+    const imageUrl = referenceImageDataUrls[photoNumber - 1];
+
+    if (!imageUrl) {
+        return `
+            <figure class="preview-photo-slot preview-photo-slot--empty">
+                <div class="preview-photo-placeholder">사진 ${photoNumber}</div>
+                <figcaption>${escapeHtml(caption)}</figcaption>
+            </figure>
+        `;
+    }
+
+    return `
+        <figure class="preview-photo-slot">
+            <img src="${imageUrl}" alt="${escapeHtml(caption)}">
+            <figcaption>${escapeHtml(caption)}</figcaption>
+        </figure>
+    `;
 }
 
 /**
@@ -151,6 +189,8 @@ function previewTextToHtml(value) {
         .map((block) => {
             const line = block.trim();
             if (!line) return '';
+            const photoHtml = photoMarkerToHtml(line);
+            if (photoHtml) return photoHtml;
             if (/^\d+\.\s/.test(line)) {
                 return `<h3>${line}</h3>`;
             }
@@ -185,6 +225,16 @@ function previewSeoToHtml(value) {
 /**
  * 현재 작성 영역의 제목/본문/SEO 값을 조합해 최종 글 미리보기를 갱신합니다.
  */
+function buildNaverClipboardHtml(title, contentText, seoText) {
+    return `
+        <article>
+            ${title ? `<h1>${escapeHtml(title)}</h1>` : ''}
+            ${contentText ? previewTextToHtml(contentText) : ''}
+            ${seoText ? previewSeoToHtml(seoText) : ''}
+        </article>
+    `.trim();
+}
+
 function updatePostPreview() {
     const title = getFirstTitle();
     const content = $('#contentText').val().trim();
@@ -337,10 +387,10 @@ async function loadTokenUsage() {
 
 /**
  * 글 목록을 API에서 불러와 테이블에 렌더링합니다.
- * 검색 키워드와 상태 필터를 쿼리 파라미터로 전달합니다.
+ * 검색어와 상태 필터를 쿼리 파라미터로 전달합니다.
  * 결과가 없으면 빈 상태 메시지를 표시합니다.
  *
- * @param {string} [keyword='']  - 키워드 검색어 (title, topic_keyword 대상)
+ * @param {string} [keyword='']  - 검색어 (title, topic_keyword 대상)
  * @param {string} [status='']   - 상태 필터 코드 (빈 문자열이면 전체)
  */
 async function loadPosts(keyword = '', status = '') {
@@ -374,7 +424,7 @@ async function loadPosts(keyword = '', status = '') {
                         ${escapeHtml(post.title)}
                     </button>
                 </td>
-                <td style="color:var(--color-text-muted);">${escapeHtml(post.topic_keyword)}</td>
+                <td style="color:var(--color-text-muted);" title="${escapeHtml(post.topic_keyword)}">${escapeHtml(compactMemo(post.topic_keyword))}</td>
                 <td><span class="type-badge">${typeLabel(post.category)}</span></td>
                 <td><span class="status-badge status-badge--${post.status}">${statusLabel(post.status)}</span></td>
                 <td style="color:var(--color-text-muted);font-size:12px;white-space:nowrap;">
@@ -459,7 +509,7 @@ async function openPost(postId) {
 // ───────────────────────────────────────────
 
 /**
- * 키워드와 글 유형을 기반으로 블로그 제목 후보 5개를 AI로 생성합니다.
+ * 사용자가 적은 작성 메모와 카테고리를 기반으로 블로그 제목 후보 5개를 AI로 생성합니다.
  * 생성 후 첫 번째 제목을 자동으로 textarea에 반영합니다.
  *
  * @returns {Promise<string|undefined>} 선택된 첫 번째 제목 (유효성 실패 시 undefined)
@@ -467,7 +517,7 @@ async function openPost(postId) {
 async function generateTitle() {
     const body = requestBody();
     if (!body.keyword) {
-        toast('키워드를 입력해주세요.', true);
+        toast('작성 메모를 입력해주세요.', true);
         return;
     }
 
@@ -479,8 +529,8 @@ async function generateTitle() {
 }
 
 /**
- * 제목과 주제/키워드를 기준으로 실제 블로그 본문을 AI로 생성합니다.
- * 주제/키워드와 제목이 모두 필요합니다.
+ * 제목과 작성 메모를 기준으로 실제 블로그 본문을 AI로 생성합니다.
+ * 작성 메모와 제목이 모두 필요합니다.
  *
  * @returns {Promise<string|undefined>} 생성된 본문 텍스트 (유효성 실패 시 undefined)
  */
@@ -489,7 +539,7 @@ async function generateContent() {
     const title = getFirstTitle();
 
     if (!base.keyword || !title) {
-        toast('주제/키워드와 제목이 필요합니다.', true);
+        toast('작성 메모와 제목이 필요합니다.', true);
         return;
     }
 
@@ -506,8 +556,8 @@ async function generateContent() {
 }
 
 /**
- * 생성된 본문을 기준으로 SEO 설명과 Tistory 태그를 AI로 생성합니다.
- * 키워드, 제목, 본문이 모두 필요합니다.
+ * 생성된 본문을 기준으로 SEO 설명과 네이버 블로그 태그를 AI로 생성합니다.
+ * 작성 메모, 제목, 본문이 모두 필요합니다.
  *
  * @returns {Promise<string|undefined>} 생성된 SEO 텍스트 (유효성 실패 시 undefined)
  */
@@ -517,7 +567,7 @@ async function generateSeo() {
     const contentText = $('#contentText').val().trim();
 
     if (!base.keyword || !title || !contentText) {
-        toast('키워드, 제목, 본문이 모두 필요합니다.', true);
+        toast('작성 메모, 제목, 본문이 모두 필요합니다.', true);
         return;
     }
 
@@ -608,7 +658,7 @@ async function savePost() {
 
     // 최소 필수 필드 검증
     if (!title)   return toast('제목이 비어있습니다. 먼저 제목을 생성하거나 입력하세요.', true);
-    if (!keyword) return toast('키워드가 비어있습니다.', true);
+    if (!keyword) return toast('작성 메모가 비어있습니다.', true);
 
     const seoText = $('#seo').val();
     const payload = {
@@ -700,9 +750,9 @@ function resetEditor() {
  * 참고 이미지 선택 값을 초기화합니다.
  */
 function clearReferenceImage() {
-    referenceImageDataUrl = null;
+    referenceImageDataUrls = [];
     $('#referenceImage').val('');
-    $('#referenceImageThumb').attr('src', '');
+    $('#referenceImageList').empty();
     $('#referenceImagePreview').hide();
 }
 
@@ -737,13 +787,14 @@ async function copyText() {
 }
 
 /**
- * 본문 텍스트를 Tistory용 HTML로 서버에서 변환한 뒤 클립보드에 복사합니다.
+ * 본문 텍스트를 네이버 블로그에 붙여넣기 쉬운 HTML로 서버에서 변환한 뒤 클립보드에 복사합니다.
  * 제목 또는 본문이 비어있으면 변환을 요청하지 않습니다.
  */
 async function copyHtml() {
     const title       = getFirstTitle();
     const keyword     = $('#keyword').val().trim();
     const contentText = $('#contentText').val().trim();
+    const seoText     = $('#seo').val().trim();
 
     if (!contentText) {
         return toast('변환할 본문이 없습니다.', true);
@@ -758,13 +809,23 @@ async function copyHtml() {
     }
 
     try {
-        const data = await postJson(`${API}/api/ai/html-convert`, {
-            title,
-            keyword,
-            content_text: contentText,
-        });
-        await navigator.clipboard.writeText(data.result);
-        toast('HTML을 복사했습니다.');
+        const html = buildNaverClipboardHtml(title, contentText, seoText);
+        if (window.ClipboardItem && navigator.clipboard.write) {
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/html':  new Blob([html], { type: 'text/html' }),
+                    'text/plain': new Blob([contentText], { type: 'text/plain' }),
+                }),
+            ]);
+        } else {
+            const data = await postJson(`${API}/api/ai/html-convert`, {
+                title,
+                keyword,
+                content_text: contentText,
+            });
+            await navigator.clipboard.writeText(data.result);
+        }
+        toast('네이버 블로그에 붙여넣을 HTML을 복사했습니다.');
     } catch (err) {
         const message = err?.responseJSON?.detail || 'HTML 변환 중 오류가 발생했습니다.';
         toast(message, true);
@@ -851,7 +912,7 @@ $('#btnReload').on('click', async () => {
     toast('목록을 새로고침했습니다.');
 });
 
-// 키워드 검색: 300ms 디바운스 처리 (타이핑마다 API 호출 방지)
+// 검색어 입력: 300ms 디바운스 처리 (타이핑마다 API 호출 방지)
 let searchDebounceTimer = null;
 $('#searchKeyword').on('input', function () {
     clearTimeout(searchDebounceTimer);
@@ -870,31 +931,49 @@ $('#postStatus').on('change', function () {
     $(this).attr('data-status', $(this).val());
 });
 
-// 참고 이미지 업로드: 브라우저에서 data URL로 읽어 OpenAI 요청에 함께 전달합니다.
+// 본문 사진 업로드: 브라우저에서 data URL로 읽어 OpenAI 요청에 함께 전달합니다.
 $('#referenceImage').on('change', function () {
-    const file = this.files?.[0];
-    if (!file) {
+    const files = Array.from(this.files || []);
+    if (!files.length) {
         clearReferenceImage();
         return;
     }
-    if (!file.type.startsWith('image/')) {
+    if (files.some((file) => !file.type.startsWith('image/'))) {
         toast('이미지 파일만 업로드할 수 있습니다.', true);
         clearReferenceImage();
         return;
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-        referenceImageDataUrl = String(reader.result);
-        $('#referenceImageThumb').attr('src', referenceImageDataUrl);
-        $('#referenceImagePreview').show();
-        toast('참고 이미지를 불러왔습니다.');
-    };
-    reader.onerror = () => {
-        toast('이미지를 읽는 중 오류가 발생했습니다.', true);
+    if (files.length > 8) {
+        toast('사진은 최대 8장까지 선택해주세요.', true);
         clearReferenceImage();
-    };
-    reader.readAsDataURL(file);
+        return;
+    }
+
+    Promise.all(files.map((file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+            name: file.name,
+            dataUrl: String(reader.result),
+        });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    })))
+        .then((items) => {
+            referenceImageDataUrls = items.map((item) => item.dataUrl);
+            $('#referenceImageList').html(items.map((item, index) => `
+                <div class="image-reference-item">
+                    <img src="${item.dataUrl}" alt="본문 사진 ${index + 1}">
+                    <span>사진 ${index + 1}</span>
+                </div>
+            `).join(''));
+            $('#referenceImagePreview').show();
+            toast(`사진 ${items.length}장을 불러왔습니다.`);
+        })
+        .catch((err) => {
+            toast('이미지를 읽는 중 오류가 발생했습니다.', true);
+            clearReferenceImage();
+            console.error('[referenceImage] 이미지 읽기 실패:', err);
+        });
 });
 
 $('#btnClearReferenceImage').on('click', clearReferenceImage);

@@ -1,7 +1,7 @@
 """
-html_service.py - 텍스트 → Tistory HTML 변환 서비스
+html_service.py - 텍스트 → 네이버 블로그용 HTML 변환 서비스
 
-블로그 본문 텍스트를 Tistory 에디터에 붙여넣기 적합한 단순 HTML로 변환합니다.
+블로그 본문 텍스트를 네이버 블로그 에디터에 붙여넣기 적합한 단순 HTML로 변환합니다.
 
 변환 규칙:
     - 코드 블록(```…```)    → <pre><code>…</code></pre>
@@ -16,7 +16,7 @@ import re
 
 def text_to_tistory_html(text: str) -> str:
     """
-    일반 텍스트 본문을 Tistory 에디터에 붙여넣기 쉬운 단순 HTML로 변환합니다.
+    일반 텍스트 본문을 네이버 블로그 에디터에 붙여넣기 쉬운 단순 HTML로 변환합니다.
 
     처리 순서:
         1. HTML 특수문자 이스케이프 (XSS 방지)
@@ -28,7 +28,7 @@ def text_to_tistory_html(text: str) -> str:
         text: 변환할 원본 텍스트 (None이나 빈 문자열도 허용)
 
     Returns:
-        Tistory 에디터에 붙여넣기 적합한 HTML 문자열
+        네이버 블로그 에디터에 붙여넣기 적합한 HTML 문자열
     """
     if not text:
         return ""

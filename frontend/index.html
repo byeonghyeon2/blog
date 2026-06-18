@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/style.css?v=20260616-4">
+    <link rel="stylesheet" href="/assets/css/style.css?v=20260618-5">
 </head>
 <body>
 
@@ -17,7 +17,7 @@
             <div class="topbar-logo">✍</div>
             <div>
                 <h1>블로그 자동 작성</h1>
-                <p>카테고리별 블로그 글 생성 · 수정 · Tistory 발행 도구</p>
+                <p>네이버 블로그용 글 생성 · 사진 배치 · 복사 발행 도구</p>
             </div>
         </div>
         <nav>
@@ -63,7 +63,6 @@
                         <input
                             id="searchKeyword"
                             type="text"
-                            placeholder="키워드 검색..."
                             class="search-input"
                         >
                         <!-- 상태 필터 드롭다운 -->
@@ -87,7 +86,7 @@
                             <tr>
                                 <th class="col-id">ID</th>
                                 <th class="col-title">제목</th>
-                                <th class="col-kw">키워드</th>
+                                <th class="col-kw">작성 메모</th>
                                 <th class="col-type">카테고리</th>
                                 <th class="col-status">상태</th>
                                 <th class="col-date">생성일</th>
@@ -119,13 +118,12 @@
                 </div>
 
                 <div class="field-group">
-                    <label for="keyword">주제 / 키워드</label>
-                    <input
+                    <label for="keyword">작성 메모</label>
+                    <textarea
                         id="keyword"
-                        type="text"
-                        placeholder="예: 제주도 2박 3일 여행, 금리 인하, 성수동 맛집"
-                        autocomplete="off"
-                    >
+                        class="writing-brief"
+                        rows="9"
+                    ></textarea>
                 </div>
 
                 <div class="field-group">
@@ -140,7 +138,19 @@
                 </div>
 
                 <div class="field-group">
-                    <label for="targetLength">목표 글자 수</label>
+                    <label for="targetLength" class="label-with-tooltip">
+                        <span>목표 글자 수</span>
+                        <span class="tooltip-mark" tabindex="0" aria-label="권장 글자 수">
+                            ?
+                            <span class="tooltip-panel" role="tooltip">
+                                권장 글자 수<br>
+                                짧은 팁/리뷰: 1,000~1,500자<br>
+                                일반 정보글: 2,000~3,000자<br>
+                                자세한 가이드: 3,500~5,000자<br>
+                                긴 비교/정리글: 5,000자 이상
+                            </span>
+                        </span>
+                    </label>
                     <input
                         id="targetLength"
                         type="number"
@@ -170,11 +180,11 @@
                 </div>
 
                 <div class="field-group">
-                    <label for="referenceImage">참고 이미지</label>
-                    <input id="referenceImage" type="file" accept="image/png,image/jpeg,image/webp">
+                    <label for="referenceImage">본문 사진</label>
+                    <input id="referenceImage" type="file" accept="image/png,image/jpeg,image/webp" multiple>
                     <div id="referenceImagePreview" class="image-reference" style="display:none;">
-                        <img id="referenceImageThumb" alt="참고 이미지 미리보기">
-                        <button id="btnClearReferenceImage" type="button" class="btn btn--ghost btn--sm">이미지 제거</button>
+                        <div id="referenceImageList" class="image-reference-list"></div>
+                        <button id="btnClearReferenceImage" type="button" class="btn btn--ghost btn--sm">이미지 전체 제거</button>
                     </div>
                 </div>
 
@@ -227,18 +237,17 @@
                     <textarea
                         id="title"
                         rows="3"
-                        placeholder="제목 후보를 생성한 뒤 사용할 제목만 남겨두세요."
                     ></textarea>
                 </div>
 
                 <div class="field-group">
                     <label for="contentText">본문</label>
-                    <textarea id="contentText" rows="24" placeholder="본문이 여기에 생성됩니다."></textarea>
+                    <textarea id="contentText" rows="24"></textarea>
                 </div>
 
                 <div class="field-group">
                     <label for="seo">SEO / 태그</label>
-                    <textarea id="seo" rows="4" placeholder="SEO 설명과 태그가 여기에 생성됩니다."></textarea>
+                    <textarea id="seo" rows="4"></textarea>
                 </div>
 
                 <div class="actions actions--spread">
@@ -249,7 +258,7 @@
                     <div class="action-group">
                         <!-- 복사 버튼: 텍스트 / HTML 두 가지 -->
                         <button id="btnCopyText" class="btn btn--secondary">본문 복사</button>
-                        <button id="btnCopyHtml" class="btn btn--secondary">HTML 복사</button>
+                        <button id="btnCopyHtml" class="btn btn--secondary">네이버용 복사</button>
                         <!-- 현재 글 삭제 버튼 (저장된 글에만 활성화) -->
                         <button id="btnDelete" class="btn btn--danger" style="display:none;">삭제</button>
                     </div>
@@ -294,6 +303,6 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="/assets/js/app.js?v=20260616-5"></script>
+    <script src="/assets/js/app.js?v=20260618-5"></script>
 </body>
 </html>

@@ -32,7 +32,7 @@ class Post(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    topic_keyword: Mapped[str] = mapped_column(String(255), nullable=False)
+    topic_keyword: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[BlogCategory] = mapped_column(Enum(BlogCategory), default=BlogCategory.IT)
     status: Mapped[PostStatus] = mapped_column(Enum(PostStatus), default=PostStatus.DRAFT)
     content_text: Mapped[Optional[str]] = mapped_column(Text)

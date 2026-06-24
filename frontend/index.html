@@ -27,6 +27,9 @@
             <a href="#create" class="nav-link" data-view-link="create">
                 <span class="nav-icon">✦</span> 글 작성
             </a>
+            <a href="#instagram" class="nav-link" data-view-link="instagram">
+                <span class="nav-icon">▣</span> 카드뉴스
+            </a>
         </nav>
     </header>
 
@@ -202,18 +205,6 @@
                     <button id="btnNewPost" class="btn btn--ghost btn--sm">새 글</button>
                 </div>
 
-                <!-- 이 앱에서 발생한 OpenAI 예상 비용을 월간 예산 기준으로 표시합니다. -->
-                <div class="token-usage-card">
-                    <div class="token-usage-head">
-                        <span>OpenAI 예산</span>
-                        <strong id="tokenUsagePercent">0%</strong>
-                    </div>
-                    <div class="token-progress" aria-hidden="true">
-                        <div id="tokenProgressFill" class="token-progress-fill" style="width:0%"></div>
-                    </div>
-                    <p id="tokenUsageText">$0.00 사용 / $10.00 예산</p>
-                    <small id="tokenUsageDetail">이 앱 로그와 초기 사용분 기준입니다.</small>
-                </div>
             </div>
 
             <!-- 우측 상단: 생성 결과 편집 패널 -->
@@ -277,6 +268,100 @@
                 </article>
             </section>
         </section>
+        </section>
+        <!-- 인스타 카드뉴스 화면: URL/블로그 글/정보성 글을 카드뉴스 원고로 변환합니다. -->
+        <section id="instagramView" class="view-section" style="display:none;">
+            <section class="instagram-workspace">
+                <div class="panel instagram-input-panel">
+                    <div class="panel-header">
+                        <h2>카드뉴스 생성</h2>
+                        <span class="panel-badge">INSTAGRAM</span>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="instaSourceType">자료 유형</label>
+                        <select id="instaSourceType">
+                            <option value="TEXT">정보성 글</option>
+                            <option value="BLOG">블로그 글</option>
+                            <option value="URL">URL</option>
+                        </select>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="instaCategory">카테고리</label>
+                        <select id="instaCategory">
+                            <option value="">주제 제한 없음</option>
+                            <option value="IT">IT / 기술</option>
+                            <option value="FINANCE">금융 / 재테크</option>
+                            <option value="FOOD">맛집 / 음식</option>
+                            <option value="TRAVEL">여행 / 장소</option>
+                            <option value="LIFESTYLE">생활 / 리뷰</option>
+                        </select>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="instaSourceUrl">URL</label>
+                        <input id="instaSourceUrl" type="text" placeholder="참고할 글 주소가 있으면 입력">
+                    </div>
+
+                    <div class="field-group">
+                        <label for="instaSourceText">원본 내용</label>
+                        <textarea id="instaSourceText" rows="11" placeholder="블로그 글, 정보성 글, 메모를 붙여넣어 주세요."></textarea>
+                    </div>
+
+                    <div class="instagram-options">
+                        <div class="field-group">
+                            <label for="instaCardCount">카드 수</label>
+                            <select id="instaCardCount">
+                                <option value="5">5장</option>
+                                <option value="6" selected>6장</option>
+                                <option value="7">7장</option>
+                                <option value="8">8장</option>
+                                <option value="10">10장</option>
+                            </select>
+                        </div>
+                        <div class="field-group">
+                            <label for="instaPurpose">목적</label>
+                            <select id="instaPurpose">
+                                <option value="정보 전달">정보 전달</option>
+                                <option value="블로그 유입">블로그 유입</option>
+                                <option value="저장 유도">저장 유도</option>
+                                <option value="댓글 유도">댓글 유도</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="instaStyleNote">참고 스타일 메모</label>
+                        <textarea id="instaStyleNote" rows="3" placeholder="참고 인스타를 받기 전까지는 원하는 톤이나 구성만 간단히 적어도 됩니다."></textarea>
+                    </div>
+
+                    <div class="actions">
+                        <button id="btnGenerateInsta" class="btn btn--primary btn--full">
+                            <span class="btn-text">카드뉴스 만들기</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="panel instagram-result-panel">
+                    <div class="panel-header">
+                        <h2>생성 결과</h2>
+                        <button id="btnCopyInsta" class="btn btn--secondary btn--sm">원고 복사</button>
+                    </div>
+                    <textarea id="instaResultText" rows="24" placeholder="카드뉴스 원고가 여기에 생성됩니다."></textarea>
+                </div>
+
+                <div class="panel instagram-preview-panel">
+                    <div class="panel-header">
+                        <h2>카드 미리보기</h2>
+                        <span class="panel-badge">PREVIEW</span>
+                    </div>
+                    <div id="instaCardPreview" class="insta-card-grid">
+                        <p class="preview-empty">자료를 입력하고 카드뉴스를 만들면 카드별 미리보기가 표시됩니다.</p>
+                    </div>
+                </div>
+            </section>
+        </section>
     </main>
 
     <!-- 토스트 알림 (우하단 고정 표시) -->
@@ -303,6 +388,6 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="/assets/js/app.js?v=20260618-5"></script>
+    <script src="/assets/js/app.js?v=20260624-1"></script>
 </body>
 </html>

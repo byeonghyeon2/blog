@@ -27,5 +27,15 @@ class SeoRequest(BaseModel):
     content_text: str
 
 
+class InstagramCardRequest(BaseModel):
+    source_type: str = "TEXT"
+    source_url: Optional[str] = None
+    source_text: str = ""
+    card_count: int = 6
+    category: Optional[BlogCategory] = None
+    purpose: str = "INFO"
+    style_note: str = ""
+
+
 class AiResponse(BaseModel):
     result: str

@@ -43,16 +43,17 @@ let referenceImageDataUrls = [];
  * @param {'posts'|'create'} viewName - 표시할 화면 이름
  */
 function showView(viewName) {
-    const normalized = viewName === 'create' ? 'create' : 'posts';
+    const normalized = ['posts', 'create', 'instagram'].includes(viewName) ? viewName : 'posts';
 
     $('#postsView').toggle(normalized === 'posts');
     $('#createView').toggle(normalized === 'create');
+    $('#instagramView').toggle(normalized === 'instagram');
 
     $('[data-view-link]').removeClass('active');
     $(`[data-view-link="${normalized}"]`).addClass('active');
 
-    if (window.location.hash !== `#${normalized === 'create' ? 'create' : 'posts'}`) {
-        window.location.hash = normalized === 'create' ? 'create' : 'posts';
+    if (window.location.hash !== `#${normalized}`) {
+        window.location.hash = normalized;
     }
 
     syncCreatePanelHeights();
@@ -358,34 +359,6 @@ async function loadDashboard() {
 }
 
 /**
- * 이번 달 앱 내부 AI 토큰/예상 비용 사용량을 불러와 글 생성 패널 하단에 표시합니다.
- * OpenAI 계정 전체 사용량이 아니라 이 앱의 generation_logs와 초기 보정값 기준입니다.
- */
-async function loadTokenUsage() {
-    try {
-        const data = await $.getJSON(`${API}/api/dashboard/token-usage`);
-        const used = Number(data.used_tokens || 0);
-        const percent = Number(data.usage_percent || 0);
-        const usedCost = Number(data.used_cost_usd || 0);
-        const budget = Number(data.budget_usd || 0);
-        const remaining = Number(data.remaining_usd || 0);
-        const cappedPercent = Math.min(percent, 100);
-
-        $('#tokenUsagePercent').text(`${percent.toFixed(1)}%`);
-        $('#tokenProgressFill').css('width', `${cappedPercent}%`);
-        $('#tokenUsageText').text(
-            `${data.period} $${usedCost.toFixed(2)} 사용 / $${budget.toFixed(2)} 예산`
-        );
-        $('#tokenUsageDetail').text(
-            `잔여 $${remaining.toFixed(2)} · 앱 토큰 ${used.toLocaleString()} tokens`
-        );
-    } catch (err) {
-        console.error('[loadTokenUsage] 토큰 사용량 로드 실패:', err);
-        $('#tokenUsageText').text('예산 사용량을 불러오지 못했습니다.');
-    }
-}
-
-/**
  * 글 목록을 API에서 불러와 테이블에 렌더링합니다.
  * 검색어와 상태 필터를 쿼리 파라미터로 전달합니다.
  * 결과가 없으면 빈 상태 메시지를 표시합니다.
@@ -623,7 +596,6 @@ async function generateSelected() {
         console.error('[generateSelected] 생성 오류:', err);
     } finally {
         setLoading(false);
-        await loadTokenUsage();
     }
 }
 
@@ -652,6 +624,126 @@ function modeToLoadingMessage(mode) {
  * currentPostId가 있으면 PUT(업데이트), 없으면 POST(새 글 생성)를 호출합니다.
  * 저장 성공 시 대시보드와 목록을 자동으로 갱신합니다.
  */
+/**
+ * 카드뉴스 생성 요청에 사용할 입력값을 모읍니다.
+ * URL만 넣거나, 직접 작성한 글만 넣거나, 둘 다 넣는 방식 모두 지원합니다.
+ *
+ * @returns {object} 인스타 카드뉴스 생성 API 요청 본문
+ */
+function instagramRequestBody() {
+    const category = $('#instaCategory').val();
+    return {
+        source_type: $('#instaSourceType').val(),
+        source_url: $('#instaSourceUrl').val().trim(),
+        source_text: $('#instaSourceText').val().trim(),
+        card_count: Number($('#instaCardCount').val()) || 6,
+        category: category || null,
+        purpose: $('#instaPurpose').val(),
+        style_note: $('#instaStyleNote').val().trim(),
+    };
+}
+
+/**
+ * AI가 반환한 카드뉴스 원고를 카드 단위 객체로 파싱합니다.
+ * 출력 형식이 조금 흔들려도 제목/본문/이미지 설명을 최대한 분리해서 미리보기에 사용합니다.
+ *
+ * @param {string} text - AI가 생성한 카드뉴스 원고
+ * @returns {{number:number,title:string,body:string,image:string}[]} 카드 목록
+ */
+function parseInstagramCards(text) {
+    const blocks = String(text || '')
+        .split(/(?=\[카드\s*\d+\])/g)
+        .map((block) => block.trim())
+        .filter((block) => block.startsWith('[카드'));
+
+    return blocks.map((block, index) => {
+        const numberMatch = block.match(/\[카드\s*(\d+)\]/);
+        const titleMatch = block.match(/제목\s*:\s*(.+)/);
+        const imageMatch = block.match(/이미지\s*:\s*(.+)/);
+        const bodyMatch = block.match(/본문\s*:\s*([\s\S]*?)(?=\n이미지\s*:|\n\[카드|\n해시태그\s*:|$)/);
+
+        return {
+            number: Number(numberMatch?.[1]) || index + 1,
+            title: (titleMatch?.[1] || '').trim(),
+            body: (bodyMatch?.[1] || '').trim(),
+            image: (imageMatch?.[1] || '').trim(),
+        };
+    });
+}
+
+/**
+ * 카드뉴스 원고를 인스타 카드 형태의 미리보기로 렌더링합니다.
+ * 실제 디자인 이미지는 아니고, 카드별 카피와 이미지 방향을 검수하기 위한 초안 화면입니다.
+ *
+ * @param {string} text - 카드뉴스 원고
+ */
+function renderInstagramPreview(text) {
+    const cards = parseInstagramCards(text);
+
+    if (!cards.length) {
+        $('#instaCardPreview').html('<p class="preview-empty">자료를 입력하고 카드뉴스를 만들면 카드별 미리보기가 표시됩니다.</p>');
+        return;
+    }
+
+    $('#instaCardPreview').html(cards.map((card) => `
+        <article class="insta-card">
+            <div class="insta-card__top">
+                <span class="insta-card__number">${card.number}</span>
+                <h3>${escapeHtml(card.title || `카드 ${card.number}`)}</h3>
+                <p>${escapeHtml(card.body).replaceAll('\n', '<br>')}</p>
+            </div>
+            ${card.image ? `<div class="insta-card__image-note">${escapeHtml(card.image)}</div>` : ''}
+        </article>
+    `).join(''));
+}
+
+/**
+ * URL/블로그 글/정보성 글을 인스타 카드뉴스 원고로 생성합니다.
+ * 버튼을 누르는 시점에만 OpenAI API를 호출하므로, 호출할 때마다 토큰 비용이 발생합니다.
+ */
+async function generateInstagramCards() {
+    const payload = instagramRequestBody();
+
+    if (!payload.source_url && !payload.source_text) {
+        return toast('URL 또는 카드뉴스로 만들 내용을 입력해 주세요.', true);
+    }
+
+    setLoading(true, '카드뉴스 원고를 생성하고 있습니다...');
+    try {
+        const data = await postJson(`${API}/api/ai/instagram-cards`, payload);
+        $('#instaResultText').val(data.result);
+        renderInstagramPreview(data.result);
+        toast('카드뉴스 원고가 생성되었습니다.');
+    } catch (err) {
+        const message = err?.responseJSON?.detail || '카드뉴스 생성 중 오류가 발생했습니다.';
+        toast(message, true);
+        console.error('[generateInstagramCards] 생성 오류:', err);
+    } finally {
+        setLoading(false);
+    }
+}
+
+/**
+ * 카드뉴스 원고 textarea 내용을 클립보드로 복사합니다.
+ */
+async function copyInstagramText() {
+    const text = $('#instaResultText').val();
+    if (!text.trim()) {
+        return toast('복사할 카드뉴스 원고가 없습니다.', true);
+    }
+    if (!navigator.clipboard) {
+        return toast('클립보드 API를 지원하지 않는 환경입니다.', true);
+    }
+
+    try {
+        await navigator.clipboard.writeText(text);
+        toast('카드뉴스 원고를 복사했습니다.');
+    } catch (err) {
+        toast('카드뉴스 원고 복사에 실패했습니다.', true);
+        console.error('[copyInstagramText] 복사 실패:', err);
+    }
+}
+
 async function savePost() {
     const title   = getFirstTitle();
     const keyword = $('#keyword').val().trim();
@@ -845,6 +937,13 @@ $(document).on('click', '[data-open]', function () {
 // 생성하기 버튼
 $('#btnGenerate').on('click', generateSelected);
 
+// 인스타 카드뉴스 생성/복사 버튼
+$('#btnGenerateInsta').on('click', generateInstagramCards);
+$('#btnCopyInsta').on('click', copyInstagramText);
+$('#instaResultText').on('input', function () {
+    renderInstagramPreview($(this).val());
+});
+
 // 글 저장 버튼
 $('#btnSave').on('click', savePost);
 
@@ -996,9 +1095,11 @@ $(window).on('resize', syncCreatePanelHeights);
  */
 $(async function () {
     await loadDashboard();
-    await loadTokenUsage();
     await loadPosts();
     updatePostPreview();
-    showView(window.location.hash === '#create' ? 'create' : 'posts');
+    const initialView = window.location.hash === '#create'
+        ? 'create'
+        : (window.location.hash === '#instagram' ? 'instagram' : 'posts');
+    showView(initialView);
     syncCreatePanelHeights();
 });

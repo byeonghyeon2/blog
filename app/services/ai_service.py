@@ -9,6 +9,9 @@ ai_service.py - OpenAI 기반 블로그 글 생성 서비스
 
 import re
 from dataclasses import dataclass
+from html import unescape
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from openai import OpenAI
 
@@ -358,6 +361,106 @@ def seo_prompt(title: str, keyword: str, content_text: str) -> str:
 출력 형식:
 SEO 설명: ...
 태그: 태그1, 태그2, 태그3, 태그4, 태그5
+""".strip()
+
+
+def fetch_url_text(url: str, limit: int = 6000) -> str:
+    """
+    URL 기반 카드뉴스 생성에 사용할 페이지 본문을 가볍게 추출합니다.
+    외부 사이트 구조가 제각각이라 완벽한 크롤러가 아니라, AI 입력용 요약 재료를 만드는 용도입니다.
+    """
+    if not url:
+        return ""
+
+    try:
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; BlogWriter/1.0)",
+            },
+        )
+        with urlopen(request, timeout=8) as response:
+            content_type = response.headers.get("content-type", "")
+            charset = "utf-8"
+            match = re.search(r"charset=([\w-]+)", content_type, re.I)
+            if match:
+                charset = match.group(1)
+            raw_html = response.read(300000)
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return ""
+
+    html = raw_html.decode(charset, errors="ignore")
+    html = re.sub(r"(?is)<(script|style|noscript|svg).*?>.*?</\1>", " ", html)
+    html = re.sub(r"(?is)<!--.*?-->", " ", html)
+    text = re.sub(r"(?s)<[^>]+>", " ", html)
+    text = unescape(re.sub(r"\s+", " ", text)).strip()
+    return text[:limit]
+
+
+def instagram_cards_prompt(
+    source_type: str,
+    source_url: str | None,
+    source_text: str,
+    fetched_text: str,
+    card_count: int,
+    category: BlogCategory | None,
+    purpose: str,
+    style_note: str,
+) -> str:
+    """
+    블로그 글, URL, 정보성 메모를 인스타 카드뉴스 원고로 바꾸는 프롬프트를 만듭니다.
+    출력 형식을 고정해두면 프론트에서 카드별로 안정적으로 미리보기를 만들 수 있습니다.
+    """
+    safe_card_count = min(max(card_count or 6, 3), 10)
+    category_text = CATEGORY_LABELS.get(category, "주제 제한 없음") if category else "주제 제한 없음"
+    source_label = {
+        "URL": "URL",
+        "BLOG": "블로그 글",
+        "TEXT": "정보성 글",
+    }.get((source_type or "TEXT").upper(), "정보성 글")
+
+    return f"""
+아래 자료를 바탕으로 인스타 카드뉴스 원고를 작성해줘.
+
+자료 유형: {source_label}
+카테고리: {category_text}
+목적: {purpose}
+카드 수: {safe_card_count}장
+원본 URL: {source_url or "없음"}
+
+사용자가 입력한 자료:
+{source_text[:7000]}
+
+URL에서 추출한 참고 자료:
+{fetched_text[:6000]}
+
+참고 스타일 메모:
+{style_note[:1000] or "아직 없음"}
+
+말투 규칙:
+{STYLE_RULES}
+
+작성 규칙:
+- 인스타 카드뉴스처럼 한 장에 하나의 메시지만 담기
+- 첫 카드는 훅이 되는 제목, 마지막 카드는 저장/공유/댓글을 유도하는 정리 카드로 작성
+- 카드별 본문은 2~4줄 안에서 짧게 작성
+- 어려운 내용은 "쉽게 얘기하면", "예를 들어" 같은 표현으로 풀기
+- 원본 내용을 그대로 복붙하지 말고 핵심만 재구성
+- 과장된 광고 문구, 논문식 문체, 너무 딱딱한 표현 금지
+- 이미지 설명은 실제 이미지 생성이 아니라 디자이너가 참고할 수 있는 장면 설명으로 작성
+
+출력 형식은 반드시 아래 형식만 사용:
+[카드 1]
+제목: ...
+본문: ...
+이미지: ...
+
+[카드 2]
+제목: ...
+본문: ...
+이미지: ...
+
+해시태그: #태그1 #태그2 #태그3 #태그4 #태그5
 """.strip()
 
 

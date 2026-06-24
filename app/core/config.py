@@ -19,18 +19,12 @@ class Settings(BaseSettings):
         database_url:   SQLAlchemy 연결 문자열 (SQLite 기본값)
         openai_api_key: OpenAI API 키 (없으면 fallback 모드로 동작)
         openai_model:   사용할 OpenAI 모델 ID
-        openai_monthly_budget_usd: 화면에 표시할 월간 OpenAI 예산
-        openai_initial_spend_usd: 앱 외부에서 이미 사용한 금액 보정값
     """
 
     app_name:       str = "Naver Blog Writer"
     database_url:   str = "sqlite:///./work/blog_writer.db"
     openai_api_key: str = ""
     openai_model:   str = "gpt-4.1-mini"
-    openai_monthly_budget_usd: float = 10.0
-    openai_initial_spend_usd: float = 0.02
-    openai_input_price_per_1m_tokens: float = 0.75
-    openai_output_price_per_1m_tokens: float = 4.50
 
     model_config = SettingsConfigDict(
         env_file=".env",

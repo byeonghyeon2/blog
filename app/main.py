@@ -34,7 +34,6 @@ def ensure_generation_log_token_columns() -> None:
         "prompt_tokens": "INTEGER",
         "completion_tokens": "INTEGER",
         "total_tokens": "INTEGER",
-        "estimated_cost_usd": "FLOAT",
     }
 
     with engine.begin() as connection:

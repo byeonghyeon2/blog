@@ -18,13 +18,16 @@ from app.models.generation_log import GenerationLog
 from app.schemas.ai_schema import (
     AiResponse,
     ContentRequest,
+    InstagramCardRequest,
     SeoRequest,
     TitleRequest,
 )
 from app.services.ai_service import (
     GeneratedText,
     content_prompt,
+    fetch_url_text,
     generate_text_with_usage,
+    instagram_cards_prompt,
     seo_prompt,
     title_prompt,
 )
@@ -84,10 +87,6 @@ def save_generation_log(
         prompt:          OpenAI에 전달한 프롬프트 원문
         response:        OpenAI가 반환한 응답 원문
     """
-    estimated_cost = (
-        (response.prompt_tokens / 1_000_000) * settings.openai_input_price_per_1m_tokens
-        + (response.completion_tokens / 1_000_000) * settings.openai_output_price_per_1m_tokens
-    )
     db.add(
         GenerationLog(
             generation_type=generation_type,
@@ -97,7 +96,6 @@ def save_generation_log(
             prompt_tokens=response.prompt_tokens,
             completion_tokens=response.completion_tokens,
             total_tokens=response.total_tokens,
-            estimated_cost_usd=estimated_cost,
         )
     )
     db.commit()
@@ -148,6 +146,34 @@ def generate_seo(request: SeoRequest, db: Session = Depends(get_db)):
     prompt = seo_prompt(request.title, request.keyword, request.content_text)
     generated = run_ai_generation(prompt)
     save_generation_log(db, "SEO", prompt, generated)
+    return AiResponse(result=generated.text)
+
+
+@router.post("/instagram-cards", response_model=AiResponse)
+def generate_instagram_cards(request: InstagramCardRequest, db: Session = Depends(get_db)):
+    """
+    URL, 블로그 글, 정보성 글을 인스타 카드뉴스 원고로 변환합니다.
+    URL 본문 추출은 보조 재료로만 사용하고, 실패해도 사용자가 입력한 텍스트가 있으면 계속 진행합니다.
+    """
+    source_url = (request.source_url or "").strip()
+    source_text = (request.source_text or "").strip()
+    fetched_text = fetch_url_text(source_url) if source_url else ""
+
+    if not source_text and not fetched_text and not source_url:
+        raise HTTPException(status_code=400, detail="URL 또는 카드뉴스로 만들 내용을 입력해 주세요.")
+
+    prompt = instagram_cards_prompt(
+        request.source_type,
+        source_url,
+        source_text,
+        fetched_text,
+        request.card_count,
+        request.category,
+        request.purpose,
+        request.style_note,
+    )
+    generated = run_ai_generation(prompt)
+    save_generation_log(db, "INSTAGRAM_CARDS", prompt, generated)
     return AiResponse(result=generated.text)
 
 

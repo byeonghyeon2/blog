@@ -638,58 +638,6 @@ select {
     font-weight: 500;
 }
 
-.token-usage-card {
-    margin-top: 16px;
-    padding: 14px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: #f8f9fb;
-}
-
-.token-usage-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    font-size: 12px;
-    color: var(--color-text-muted);
-    font-weight: 700;
-}
-
-.token-usage-head strong {
-    color: var(--color-text);
-    font-family: var(--font-mono);
-    font-size: 13px;
-}
-
-.token-progress {
-    height: 8px;
-    border-radius: 999px;
-    background: #e5e7eb;
-    overflow: hidden;
-}
-
-.token-progress-fill {
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-review));
-    transition: width 0.2s ease;
-}
-
-.token-usage-card p {
-    margin-top: 10px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--color-text);
-}
-
-.token-usage-card small {
-    display: block;
-    margin-top: 4px;
-    color: var(--color-text-muted);
-    font-size: 11px;
-}
-
 .image-reference {
     margin-top: 10px;
     padding: 10px;
@@ -810,6 +758,95 @@ select {
     color: var(--color-text-muted);
     text-align: center;
     padding: 36px 0;
+}
+
+/* 인스타 카드뉴스 화면 */
+.instagram-workspace {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.instagram-input-panel,
+.instagram-result-panel {
+    min-height: 640px;
+}
+
+.instagram-preview-panel {
+    grid-column: 1 / -1;
+}
+
+.instagram-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.instagram-result-panel textarea {
+    min-height: 500px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    background: #f8f9fb;
+}
+
+.insta-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 14px;
+}
+
+.insta-card {
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 18px;
+    background:
+        linear-gradient(145deg, rgba(59,91,219,.09), rgba(255,255,255,0) 45%),
+        #ffffff;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+}
+
+.insta-card__number {
+    display: inline-flex;
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.insta-card h3 {
+    margin-bottom: 10px;
+    font-size: 18px;
+    line-height: 1.35;
+    word-break: keep-all;
+}
+
+.insta-card p {
+    color: var(--color-text-muted);
+    font-size: 13px;
+    line-height: 1.65;
+    word-break: keep-all;
+}
+
+.insta-card__image-note {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--color-border-dark);
+    color: var(--color-text-light);
+    font-size: 11px;
+    line-height: 1.5;
 }
 
 .section-head {
@@ -1096,6 +1133,10 @@ tbody tr:last-child td {
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .instagram-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .preview-panel {
         min-height: auto;
     }
@@ -1135,5 +1176,9 @@ tbody tr:last-child td {
 
     .search-input {
         width: 100%;
+    }
+
+    .instagram-options {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

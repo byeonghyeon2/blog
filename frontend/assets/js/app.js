@@ -21,6 +21,7 @@
  * 정적 파일과 API가 같은 서버에서 제공되므로 상대 경로('')로 충분합니다.
  */
 const API = '';
+const MAX_REFERENCE_IMAGE_COUNT = 12;
 
 /**
  * 현재 편집 패널에 로드된 글 ID.
@@ -136,6 +137,14 @@ function requestBody() {
         category: $('#postType').val(),
         reference_image_data_urls: referenceImageDataUrls,
     };
+}
+
+function syncIncludeCodeVisibility() {
+    const isItCategory = $('#postType').val() === 'IT';
+    $('#includeCodeGroup').toggle(isItCategory);
+    if (!isItCategory) {
+        $('#includeCode').prop('checked', false);
+    }
 }
 
 /**
@@ -464,6 +473,7 @@ async function openPost(postId) {
         const status = post.status || 'DRAFT';
         $('#postStatus').val(status).attr('data-status', status);
 
+        syncIncludeCodeVisibility();
         updateCurrentPostUI(post.id);
         updatePostPreview();
 
@@ -829,6 +839,7 @@ async function deleteCurrentPost() {
 function resetEditor() {
     $('#keyword').val('');
     $('#postType').val('IT');
+    syncIncludeCodeVisibility();
     $('#title').val('');
     $('#contentText').val('');
     $('#seo').val('');
@@ -846,6 +857,51 @@ function clearReferenceImage() {
     $('#referenceImage').val('');
     $('#referenceImageList').empty();
     $('#referenceImagePreview').hide();
+}
+
+function handleReferenceImageFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) {
+        clearReferenceImage();
+        return;
+    }
+    if (files.some((file) => !file.type.startsWith('image/'))) {
+        toast('이미지 파일만 업로드할 수 있습니다.', true);
+        clearReferenceImage();
+        return;
+    }
+    if (files.length > MAX_REFERENCE_IMAGE_COUNT) {
+        toast(`사진은 최대 ${MAX_REFERENCE_IMAGE_COUNT}장까지 선택해주세요.`, true);
+        clearReferenceImage();
+        return;
+    }
+
+    Promise.all(files.map((file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+            name: file.name,
+            dataUrl: String(reader.result),
+        });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    })))
+        .then((items) => {
+            referenceImageDataUrls = items.map((item) => item.dataUrl);
+            $('#referenceImageList').html(items.map((item, index) => `
+                <div class="image-reference-item">
+                    <img src="${item.dataUrl}" alt="본문 사진 ${index + 1}">
+                    <span>사진 ${index + 1}</span>
+                </div>
+            `).join(''));
+            $('#referenceImagePreview').show();
+            updatePostPreview();
+            toast(`사진 ${items.length}장을 불러왔습니다.`);
+        })
+        .catch((err) => {
+            toast('이미지를 읽는 중 오류가 발생했습니다.', true);
+            clearReferenceImage();
+            console.error('[referenceImage] 이미지 읽기 실패:', err);
+        });
 }
 
 // ───────────────────────────────────────────
@@ -1026,54 +1082,37 @@ $('#filterStatus').on('change', function () {
 });
 
 // 글 상태 드롭다운 변경 시 색상 클래스 갱신
+$('#postType').on('change', syncIncludeCodeVisibility);
+
 $('#postStatus').on('change', function () {
     $(this).attr('data-status', $(this).val());
 });
 
 // 본문 사진 업로드: 브라우저에서 data URL로 읽어 OpenAI 요청에 함께 전달합니다.
 $('#referenceImage').on('change', function () {
-    const files = Array.from(this.files || []);
-    if (!files.length) {
-        clearReferenceImage();
-        return;
-    }
-    if (files.some((file) => !file.type.startsWith('image/'))) {
-        toast('이미지 파일만 업로드할 수 있습니다.', true);
-        clearReferenceImage();
-        return;
-    }
-    if (files.length > 8) {
-        toast('사진은 최대 8장까지 선택해주세요.', true);
-        clearReferenceImage();
-        return;
-    }
-
-    Promise.all(files.map((file) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({
-            name: file.name,
-            dataUrl: String(reader.result),
-        });
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    })))
-        .then((items) => {
-            referenceImageDataUrls = items.map((item) => item.dataUrl);
-            $('#referenceImageList').html(items.map((item, index) => `
-                <div class="image-reference-item">
-                    <img src="${item.dataUrl}" alt="본문 사진 ${index + 1}">
-                    <span>사진 ${index + 1}</span>
-                </div>
-            `).join(''));
-            $('#referenceImagePreview').show();
-            toast(`사진 ${items.length}장을 불러왔습니다.`);
-        })
-        .catch((err) => {
-            toast('이미지를 읽는 중 오류가 발생했습니다.', true);
-            clearReferenceImage();
-            console.error('[referenceImage] 이미지 읽기 실패:', err);
-        });
+    handleReferenceImageFiles(this.files);
 });
+
+$('#referenceImageDropzone')
+    .on('click keydown', function (event) {
+        if (event.type === 'click' || event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            $('#referenceImage').trigger('click');
+        }
+    })
+    .on('dragenter dragover', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        $(this).addClass('is-dragover');
+    })
+    .on('dragleave dragend drop', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        $(this).removeClass('is-dragover');
+        if (event.type === 'drop') {
+            handleReferenceImageFiles(event.originalEvent.dataTransfer.files);
+        }
+    });
 
 $('#btnClearReferenceImage').on('click', clearReferenceImage);
 
@@ -1096,6 +1135,7 @@ $(window).on('resize', syncCreatePanelHeights);
 $(async function () {
     await loadDashboard();
     await loadPosts();
+    syncIncludeCodeVisibility();
     updatePostPreview();
     const initialView = window.location.hash === '#create'
         ? 'create'

@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/style.css?v=20260618-5">
+    <link rel="stylesheet" href="/assets/css/style.css?v=20260627-2">
 </head>
 <body>
 
@@ -164,7 +164,7 @@
                     >
                 </div>
 
-                <div class="field-group">
+                <div id="includeCodeGroup" class="field-group">
                     <label class="check-label">
                         <input id="includeCode" type="checkbox">
                         <span class="check-mark"></span>
@@ -184,7 +184,11 @@
 
                 <div class="field-group">
                     <label for="referenceImage">본문 사진</label>
-                    <input id="referenceImage" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+                    <input id="referenceImage" class="visually-hidden-file" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+                    <div id="referenceImageDropzone" class="image-dropzone" role="button" tabindex="0" aria-label="본문 사진 업로드">
+                        <strong>사진을 여기에 끌어다 놓기</strong>
+                        <span>클릭해서 선택할 수도 있어요 · 최대 12장</span>
+                    </div>
                     <div id="referenceImagePreview" class="image-reference" style="display:none;">
                         <div id="referenceImageList" class="image-reference-list"></div>
                         <button id="btnClearReferenceImage" type="button" class="btn btn--ghost btn--sm">이미지 전체 제거</button>
@@ -388,6 +392,6 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="/assets/js/app.js?v=20260624-1"></script>
+    <script src="/assets/js/app.js?v=20260627-2"></script>
 </body>
 </html>

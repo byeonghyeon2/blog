@@ -38,6 +38,13 @@ let currentPostId = null;
 let referenceImageDataUrls = [];
 
 /**
+ * 업로드한 사진의 시간/파일명 메모입니다.
+ * AI가 사진을 시간순으로 배치하도록 백엔드 프롬프트에 함께 전달합니다.
+ * @type {string[]}
+ */
+let referenceImageNotes = [];
+
+/**
  * 현재 표시할 화면을 전환합니다.
  * posts: 글 목록 화면, create: 글 작성/수정 화면
  *
@@ -136,6 +143,7 @@ function requestBody() {
         keyword:   $('#keyword').val().trim(),
         category: $('#postType').val(),
         reference_image_data_urls: referenceImageDataUrls,
+        reference_image_notes: referenceImageNotes,
     };
 }
 
@@ -854,9 +862,104 @@ function resetEditor() {
  */
 function clearReferenceImage() {
     referenceImageDataUrls = [];
+    referenceImageNotes = [];
     $('#referenceImage').val('');
     $('#referenceImageList').empty();
     $('#referenceImagePreview').hide();
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function readExifAscii(view, offset, count) {
+    let value = '';
+    for (let i = 0; i < count; i += 1) {
+        const code = view.getUint8(offset + i);
+        if (code === 0) break;
+        value += String.fromCharCode(code);
+    }
+    return value.trim();
+}
+
+function parseExifDateTime(value) {
+    const match = String(value || '').match(/^(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
+    if (!match) return null;
+    const [, year, month, day, hour, minute, second] = match.map(Number);
+    return new Date(year, month - 1, day, hour, minute, second);
+}
+
+function findExifDateInIfd(view, tiffStart, ifdOffset, littleEndian, depth = 0) {
+    if (!ifdOffset || depth > 2) return null;
+
+    const entryCount = view.getUint16(tiffStart + ifdOffset, littleEndian);
+    for (let i = 0; i < entryCount; i += 1) {
+        const entryOffset = tiffStart + ifdOffset + 2 + (i * 12);
+        const tag = view.getUint16(entryOffset, littleEndian);
+        const type = view.getUint16(entryOffset + 2, littleEndian);
+        const count = view.getUint32(entryOffset + 4, littleEndian);
+        const valueOffset = view.getUint32(entryOffset + 8, littleEndian);
+
+        if ((tag === 0x9003 || tag === 0x0132) && type === 2 && count > 0) {
+            const date = parseExifDateTime(readExifAscii(view, tiffStart + valueOffset, count));
+            if (date) return date;
+        }
+
+        if (tag === 0x8769) {
+            const nestedDate = findExifDateInIfd(view, tiffStart, valueOffset, littleEndian, depth + 1);
+            if (nestedDate) return nestedDate;
+        }
+    }
+
+    return null;
+}
+
+async function extractPhotoTakenAt(file) {
+    if (file.type !== 'image/jpeg') return null;
+
+    try {
+        const buffer = await readFileAsArrayBuffer(file);
+        const view = new DataView(buffer);
+        if (view.getUint16(0) !== 0xffd8) return null;
+
+        let offset = 2;
+        while (offset < view.byteLength) {
+            if (view.getUint8(offset) !== 0xff) break;
+            const marker = view.getUint8(offset + 1);
+            const size = view.getUint16(offset + 2);
+            if (marker === 0xe1 && readExifAscii(view, offset + 4, 6) === 'Exif') {
+                const tiffStart = offset + 10;
+                const littleEndian = readExifAscii(view, tiffStart, 2) === 'II';
+                const firstIfdOffset = view.getUint32(tiffStart + 4, littleEndian);
+                return findExifDateInIfd(view, tiffStart, firstIfdOffset, littleEndian);
+            }
+            offset += 2 + size;
+        }
+    } catch (err) {
+        console.warn('[referenceImage] EXIF 읽기 실패:', err);
+    }
+
+    return null;
+}
+
+function formatPhotoTime(date) {
+    if (!date) return '';
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function handleReferenceImageFiles(fileList) {
@@ -876,21 +979,40 @@ function handleReferenceImageFiles(fileList) {
         return;
     }
 
-    Promise.all(files.map((file) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({
+    Promise.all(files.map(async (file, originalIndex) => {
+        const [dataUrl, takenAt] = await Promise.all([
+            readFileAsDataUrl(file),
+            extractPhotoTakenAt(file),
+        ]);
+        const fileTime = file.lastModified ? new Date(file.lastModified) : null;
+        const sortTime = takenAt || fileTime;
+        return {
             name: file.name,
-            dataUrl: String(reader.result),
-        });
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    })))
+            dataUrl,
+            takenAt,
+            fileTime,
+            sortValue: sortTime ? sortTime.getTime() : Number.MAX_SAFE_INTEGER,
+            originalIndex,
+        };
+    }))
         .then((items) => {
+            items.sort((a, b) => (a.sortValue - b.sortValue) || (a.originalIndex - b.originalIndex));
             referenceImageDataUrls = items.map((item) => item.dataUrl);
+            referenceImageNotes = items.map((item, index) => {
+                const takenTime = formatPhotoTime(item.takenAt);
+                const fileTime = formatPhotoTime(item.fileTime);
+                const timeText = takenTime
+                    ? `촬영 시간 ${takenTime}`
+                    : fileTime
+                        ? `파일 수정 시간 ${fileTime}`
+                        : '시간 정보 없음';
+                return `사진 ${index + 1}: ${item.name}, ${timeText}`;
+            });
             $('#referenceImageList').html(items.map((item, index) => `
                 <div class="image-reference-item">
                     <img src="${item.dataUrl}" alt="본문 사진 ${index + 1}">
                     <span>사진 ${index + 1}</span>
+                    <small>${escapeHtml(formatPhotoTime(item.takenAt) || formatPhotoTime(item.fileTime) || '시간 정보 없음')}</small>
                 </div>
             `).join(''));
             $('#referenceImagePreview').show();

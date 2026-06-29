@@ -469,6 +469,16 @@ textarea {
     text-overflow: ellipsis;
 }
 
+.image-reference-item small {
+    display: block;
+    padding: 0 6px 6px;
+    font-size: 10px;
+    color: var(--color-text-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* 에디터 패널 textarea는 모노 폰트로 가독성 향상 */
 .panel--editor textarea {
     font-family: var(--font-mono);

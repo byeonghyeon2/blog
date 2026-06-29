@@ -108,7 +108,7 @@ def generate_title(request: TitleRequest, db: Session = Depends(get_db)):
     생성 결과와 프롬프트는 이력으로 저장됩니다.
     """
     image_urls = request_image_urls(request.reference_image_data_url, request.reference_image_data_urls)
-    prompt = title_prompt(request.keyword, request.category, len(image_urls))
+    prompt = title_prompt(request.keyword, request.category, len(image_urls), request.reference_image_notes)
     generated = run_ai_generation(prompt, image_urls)
     save_generation_log(db, "TITLE", prompt, generated)
     return AiResponse(result=generated.text)
@@ -128,6 +128,7 @@ def generate_content(request: ContentRequest, db: Session = Depends(get_db)):
         request.include_code,
         request.target_length,
         len(request_image_urls(request.reference_image_data_url, request.reference_image_data_urls)),
+        request.reference_image_notes,
     )
     generated = run_ai_generation(
         prompt,

@@ -13,6 +13,7 @@ from html import unescape
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import httpx
 from openai import OpenAI
 
 from app.core.config import settings
@@ -26,10 +27,15 @@ from app.models.post import BlogCategory
 # 모든 프롬프트에 공통으로 적용되는 말투 규칙
 STYLE_RULES = """
 - 설명은 짧고 명확하게 작성
-- "쉽게 얘기하면", "예를 들어" 같은 표현 사용
 - 실제 상황에서 어떻게 쓰이는지 중심으로 설명
 - 과장된 문구, 광고성 문구, 논문식 문체 금지
 - 문장은 너무 길게 늘이지 말고 블로그 글처럼 자연스럽게 작성
+""".strip()
+
+NATURAL_TONE_RULES = """
+- 초등 설명투나 억지 예시 유도 표현은 사용하지 않기
+- 보고서식 결론 연결어나 딱딱한 마무리 표현은 사용하지 않기
+- 마무리는 실제 후기나 다음에 참고할 팁처럼 자연스럽게 끝내기
 """.strip()
 
 NAVER_BLOG_RULES = """
@@ -39,6 +45,17 @@ NAVER_BLOG_RULES = """
 - 문단은 2~4문장 정도로 짧게 끊고, 모바일에서 읽기 좋게 여백을 둔 느낌으로 구성
 - 과도한 키워드 반복, 광고 문구, 이모지 남발, 억지 후기체는 피하기
 - 마지막에는 태그 후보를 본문과 분리해서 적기 좋은 단어 중심으로 구성
+""".strip()
+
+INFO_SUMMARY_RULES = """
+- 본문 시작 부분에는 짧은 인트로 뒤에 핵심 정보 요약을 먼저 배치
+- 요약 블록 제목은 "핵심 정보"처럼 간단하게 작성
+- 맛집/음식 글은 방문 일시, 상호명, 위치, 영업시간, 주차, 웨이팅, 주문 메뉴, 추천 포인트를 우선 정리
+- 여행/장소 글은 방문 일시, 장소명, 위치, 운영시간, 주차, 입장료/비용, 소요 시간, 추천 포인트를 우선 정리
+- 생활/리뷰 글은 사용 일시 또는 구매/사용 시점, 제품명/장소명, 가격, 사용 목적, 장점, 아쉬운 점을 우선 정리
+- 방문 일시는 사용자 메모, 사진 촬영 시간, 영수증/예약 화면 등에서 확인되는 값을 우선 사용
+- 방문 일시가 정확하지 않으면 지어내지 말고 "방문 일시: 확인 필요"처럼 검수할 수 있게 남기기
+- 요약 블록은 너무 길게 쓰지 말고 5~8줄 정도의 목록으로 작성한 뒤 본문을 이어가기
 """.strip()
 
 MEMO_REWRITE_RULES = """
@@ -195,7 +212,12 @@ def generate_text_with_usage(prompt: str, reference_image_data_urls: list[str] |
             total_tokens=prompt_tokens + completion_tokens,
         )
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    # 로컬 환경의 HTTP_PROXY/HTTPS_PROXY가 닫힌 포트를 가리키면 OpenAI 호출이 실패합니다.
+    # 앱 내부 호출은 OS 프록시 설정을 무시하고 직접 OpenAI에 연결하도록 고정합니다.
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        http_client=httpx.Client(trust_env=False, timeout=60.0),
+    )
     image_urls = normalize_image_urls(reference_image_data_urls)
     user_content: str | list[dict[str, object]]
     if image_urls:
@@ -234,7 +256,7 @@ def generate_text_with_usage(prompt: str, reference_image_data_urls: list[str] |
 # 프롬프트 생성 함수
 # ───────────────────────────────────────────
 
-def reference_image_instruction(image_count: int = 0) -> str:
+def reference_image_instruction(image_count: int = 0, image_notes: list[str] | None = None) -> str:
     """
     사용자가 올린 참고 이미지를 어떻게 활용할지 프롬프트에 추가합니다.
     이미지 내용과 사용자가 적은 메모를 함께 해석하되, 말투는 사용자 메모를 우선하도록 제한합니다.
@@ -242,16 +264,28 @@ def reference_image_instruction(image_count: int = 0) -> str:
     if image_count <= 0:
         return ""
 
+    notes = [note.strip() for note in (image_notes or []) if note and note.strip()]
+    note_text = "\n".join(f"- {note}" for note in notes)
+    timing_note = f"""
+
+사진 시간 정보:
+{note_text}
+""" if note_text else ""
+
     return f"""
 
 참고 방식:
 - 첨부된 참고 이미지 {image_count}장을 각각 분석해서 글의 소재로 활용
+- 사진에서 촬영 시간, 영수증 시간, 화면 캡처 시간, 예약 시간처럼 시간 정보가 확인되면 그 시간을 우선 기준으로 삼기
+- 시간 정보가 여러 장에 있으면 오래된 시간에서 최근 시간 순서로 본문 흐름을 구성
+- 시간이 불확실한 사진은 주변 내용과 파일 순서를 참고하되, 단정하지 말고 자연스럽게 배치
 - 사용자가 작성 메모에서 사진 이야기를 했다면 이미지에서 확인되는 내용을 자연스럽게 보강
 - 이미지 속 텍스트나 정보가 불확실하면 단정하지 말고 "사진상으로는", "보기에는"처럼 조심스럽게 표현
 - 본문에는 적절한 위치마다 [사진 1 삽입: 사진 내용에 맞는 짧은 설명] 형식의 줄을 넣기
 - 여러 장이면 사진 번호 순서대로 배치하되, 내용 흐름에 맞게 위치를 조정
 - 사진 삽입 줄 바로 아래에는 1~2문장 정도의 짧은 코멘트를 작성
 - 최종 말투와 강조점은 사용자 작성 메모에서 파악하되, 문장은 그대로 가져오지 말고 새로 다듬어 작성
+{timing_note}
 """.rstrip()
 
 
@@ -270,7 +304,12 @@ def category_instruction(category: BlogCategory) -> str:
     return instructions[category]
 
 
-def title_prompt(keyword: str, category: BlogCategory, image_count: int = 0) -> str:
+def title_prompt(
+    keyword: str,
+    category: BlogCategory,
+    image_count: int = 0,
+    image_notes: list[str] | None = None,
+) -> str:
     """
     사용자의 작성 메모와 카테고리를 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
 
@@ -289,11 +328,12 @@ def title_prompt(keyword: str, category: BlogCategory, image_count: int = 0) -> 
 
 카테고리: {CATEGORY_LABELS[category]}
 카테고리 작성 방향: {category_instruction(category)}
-{reference_image_instruction(image_count)}
+{reference_image_instruction(image_count, image_notes)}
 {reference_blog_style_rules(category)}
 
 말투 규칙:
 {STYLE_RULES}
+{NATURAL_TONE_RULES}
 
 메모 재작성 규칙:
 {MEMO_REWRITE_RULES}
@@ -315,6 +355,7 @@ def content_prompt(
     include_code: bool,
     target_length: int,
     image_count: int = 0,
+    image_notes: list[str] | None = None,
 ) -> str:
     """
     제목과 사용자 작성 메모를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
@@ -346,10 +387,11 @@ def content_prompt(
 카테고리: {CATEGORY_LABELS[category]}
 카테고리 작성 방향: {category_instruction(category)}
 목표 길이: 약 {target_length}자
-{reference_image_instruction(image_count)}
+{reference_image_instruction(image_count, image_notes)}
 
 말투 규칙:
 {STYLE_RULES}
+{NATURAL_TONE_RULES}
 
 네이버 블로그 작성 규칙:
 {NAVER_BLOG_RULES}
@@ -360,6 +402,9 @@ def content_prompt(
 카테고리별 구성 규칙:
 {CATEGORY_FORMAT_RULES[category]}
 {reference_blog_style_rules(category)}
+
+시작 요약 규칙:
+{INFO_SUMMARY_RULES}
 
 추가 조건:
 - 사용자가 쓴 메모를 단순 키워드가 아니라 초안 재료로 보고 핵심 주장, 경험, 팁, 감정을 분석
@@ -486,7 +531,7 @@ URL에서 추출한 참고 자료:
 - 인스타 카드뉴스처럼 한 장에 하나의 메시지만 담기
 - 첫 카드는 훅이 되는 제목, 마지막 카드는 저장/공유/댓글을 유도하는 정리 카드로 작성
 - 카드별 본문은 2~4줄 안에서 짧게 작성
-- 어려운 내용은 "쉽게 얘기하면", "예를 들어" 같은 표현으로 풀기
+- 어려운 내용은 짧고 자연스러운 문장으로 풀어 쓰기
 - 원본 내용을 그대로 복붙하지 말고 핵심만 재구성
 - 과장된 광고 문구, 논문식 문체, 너무 딱딱한 표현 금지
 - 이미지 설명은 실제 이미지 생성이 아니라 디자이너가 참고할 수 있는 장면 설명으로 작성
@@ -553,7 +598,7 @@ def fallback_response(prompt: str) -> str:
 
 [사진 1 삽입: 핵심 장면이나 첫인상을 보여주는 사진]
 
-쉽게 얘기하면, 처음 보는 사람도 바로 이해할 수 있게 핵심만 먼저 잡아주는 글입니다.
+처음 보는 사람도 바로 이해할 수 있게 핵심부터 짧게 잡아주는 글입니다.
 
 알아두면 좋은 점
 - 먼저 확인해야 할 포인트를 짧게 정리합니다.

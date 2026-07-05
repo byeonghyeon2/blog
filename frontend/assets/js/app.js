@@ -21,7 +21,12 @@
  * 정적 파일과 API가 같은 서버에서 제공되므로 상대 경로('')로 충분합니다.
  */
 const API = '';
-const MAX_REFERENCE_IMAGE_COUNT = 12;
+const MAX_REFERENCE_IMAGE_COUNT = 30;
+const MAX_AI_IMAGE_ANALYSIS_COUNT = 12;
+const FILENAME_COLLATOR = new Intl.Collator('ko-KR', {
+    numeric: true,
+    sensitivity: 'base',
+});
 
 /**
  * 현재 편집 패널에 로드된 글 ID.
@@ -31,15 +36,42 @@ const MAX_REFERENCE_IMAGE_COUNT = 12;
 let currentPostId = null;
 
 /**
- * 사용자가 업로드한 본문 사진의 data URL 목록입니다.
- * OpenAI 호출 시 사진 분석과 본문 배치 참고용으로 함께 전달합니다.
+ * 목록 API에서 마지막으로 불러온 저장 글 목록입니다.
+ * 이어쓰기 대상 선택 박스에 재사용합니다.
+ * @type {Array<object>}
+ */
+let cachedPosts = [];
+
+/**
+ * 사용자가 업로드한 전체 본문 사진의 data URL 목록입니다.
+ * 미리보기와 HTML 복사에서 실제 사진 렌더링에 사용합니다.
  * @type {string[]}
  */
 let referenceImageDataUrls = [];
 
 /**
- * 업로드한 사진의 시간/파일명 메모입니다.
- * AI가 사진을 시간순으로 배치하도록 백엔드 프롬프트에 함께 전달합니다.
+ * 정렬된 전체 업로드 사진 메타데이터입니다.
+ * AI 분석 대표 사진 선택 UI와 미리보기 갱신에 사용합니다.
+ * @type {Array<{name: string, dataUrl: string, takenAt: Date|null, fileTime: Date|null, originalIndex: number}>}
+ */
+let referenceImageItems = [];
+
+/**
+ * OpenAI 이미지 분석에 보낼 사진 data URL 목록입니다.
+ * 비용/속도/요청 크기를 안정적으로 유지하기 위해 앞 12장만 포함합니다.
+ * @type {string[]}
+ */
+let aiReferenceImageDataUrls = [];
+
+/**
+ * 전체 사진 중 AI 분석 대표로 선택된 0-based 인덱스입니다.
+ * @type {number[]}
+ */
+let selectedAiImageIndexes = [];
+
+/**
+ * 업로드한 사진의 파일명/시간 메모입니다.
+ * AI가 파일명 정렬 순서대로 사진을 배치하도록 백엔드 프롬프트에 함께 전달합니다.
  * @type {string[]}
  */
 let referenceImageNotes = [];
@@ -142,10 +174,40 @@ function requestBody() {
     return {
         keyword:   $('#keyword').val().trim(),
         category: $('#postType').val(),
-        reference_image_data_urls: referenceImageDataUrls,
+        reference_image_data_urls: aiReferenceImageDataUrls,
         reference_image_notes: referenceImageNotes,
+        ...continuationPayload(),
     };
 }
+
+function selectedContinuationPost() {
+    if (!$('#continuePost').is(':checked')) return null;
+    const postId = Number($('#continuationPostId').val());
+    if (!postId) return null;
+    return cachedPosts.find((post) => Number(post.id) === postId) || null;
+}
+
+function continuationPayload() {
+    const post = selectedContinuationPost();
+    if (!post) {
+        return {
+            continuation_title: '',
+            continuation_content: '',
+        };
+    }
+    return {
+        continuation_title: post.title || '',
+        continuation_content: post.content_text || '',
+    };
+}
+
+const CATEGORY_TARGET_LENGTHS = {
+    IT: 2200,
+    FINANCE: 2200,
+    FOOD: 1800,
+    TRAVEL: 2300,
+    LIFESTYLE: 1800,
+};
 
 function syncIncludeCodeVisibility() {
     const isItCategory = $('#postType').val() === 'IT';
@@ -153,6 +215,19 @@ function syncIncludeCodeVisibility() {
     if (!isItCategory) {
         $('#includeCode').prop('checked', false);
     }
+}
+
+function applyCategoryTargetLength() {
+    const category = $('#postType').val();
+    const defaultLength = CATEGORY_TARGET_LENGTHS[category];
+    if (defaultLength) {
+        $('#targetLength').val(defaultLength);
+    }
+}
+
+function syncCategoryOptions() {
+    syncIncludeCodeVisibility();
+    applyCategoryTargetLength();
 }
 
 /**
@@ -193,6 +268,15 @@ function photoMarkerToHtml(line) {
     `;
 }
 
+function paragraphToPreviewHtml(lines) {
+    const text = lines.map((line) => line.trim()).filter(Boolean).join('<br>');
+    if (!text) return '';
+    if (/^\d+\.\s/.test(text)) {
+        return `<h3>${text}</h3>`;
+    }
+    return `<p>${text}</p>`;
+}
+
 /**
  * textarea 내용을 HTML 미리보기로 변환합니다.
  * 실제 저장 HTML과 완전히 같지는 않지만, 작성 중 읽힘새를 확인하기 위한 가벼운 렌더러입니다.
@@ -201,20 +285,32 @@ function photoMarkerToHtml(line) {
  * @returns {string} 미리보기용 HTML
  */
 function previewTextToHtml(value) {
-    const escaped = escapeHtml(value || '');
-    return escaped
-        .split(/\n{2,}/)
-        .map((block) => {
-            const line = block.trim();
-            if (!line) return '';
-            const photoHtml = photoMarkerToHtml(line);
-            if (photoHtml) return photoHtml;
-            if (/^\d+\.\s/.test(line)) {
-                return `<h3>${line}</h3>`;
-            }
-            return `<p>${line.replaceAll('\n', '<br>')}</p>`;
-        })
-        .join('');
+    const html = [];
+    let paragraphLines = [];
+
+    String(value || '').split(/\r?\n/).forEach((rawLine) => {
+        const trimmedLine = rawLine.trim();
+
+        if (!trimmedLine) {
+            html.push(paragraphToPreviewHtml(paragraphLines));
+            paragraphLines = [];
+            return;
+        }
+
+        const escapedLine = escapeHtml(trimmedLine);
+        const photoHtml = photoMarkerToHtml(escapedLine);
+        if (photoHtml) {
+            html.push(paragraphToPreviewHtml(paragraphLines));
+            paragraphLines = [];
+            html.push(photoHtml);
+            return;
+        }
+
+        paragraphLines.push(escapedLine);
+    });
+
+    html.push(paragraphToPreviewHtml(paragraphLines));
+    return html.filter(Boolean).join('');
 }
 
 /**
@@ -429,6 +525,15 @@ async function loadPosts(keyword = '', status = '') {
     }
 }
 
+async function loadContinuationPosts() {
+    try {
+        cachedPosts = await $.getJSON(`${API}/api/posts`);
+        renderContinuationOptions(cachedPosts);
+    } catch (err) {
+        console.error('[loadContinuationPosts] 이어쓰기 글 목록 로드 실패:', err);
+    }
+}
+
 // ───────────────────────────────────────────
 // 편집 패널 갱신 함수
 // ───────────────────────────────────────────
@@ -451,6 +556,31 @@ function updateCurrentPostUI(postId) {
         // 새 글 모드: 배지와 삭제 버튼 숨김
         $('#currentPostBadge').hide();
         $('#btnDelete').hide();
+    }
+    renderContinuationOptions();
+}
+
+function renderContinuationOptions(posts = cachedPosts) {
+    const selectedValue = $('#continuationPostId').val();
+    const options = ['<option value="">연결할 글 선택</option>']
+        .concat(posts
+            .filter((post) => Number(post.id) !== Number(currentPostId))
+            .map((post) => `
+                <option value="${post.id}">
+                    #${post.id} ${escapeHtml(post.title || '제목 없음')}
+                </option>
+            `));
+    $('#continuationPostId').html(options.join(''));
+    if (selectedValue && $(`#continuationPostId option[value="${selectedValue}"]`).length) {
+        $('#continuationPostId').val(selectedValue);
+    }
+}
+
+function syncContinuationVisibility() {
+    const enabled = $('#continuePost').is(':checked');
+    $('#continuationPostId').toggle(enabled);
+    if (!enabled) {
+        $('#continuationPostId').val('');
     }
 }
 
@@ -511,6 +641,10 @@ async function generateTitle() {
         toast('작성 메모를 입력해주세요.', true);
         return;
     }
+    if ($('#continuePost').is(':checked') && !selectedContinuationPost()) {
+        toast('이어쓸 이전 글을 선택해주세요.', true);
+        return;
+    }
 
     const data = await postJson(`${API}/api/ai/title`, body);
     setGeneratedTitle(data.result);
@@ -531,6 +665,10 @@ async function generateContent() {
 
     if (!base.keyword || !title) {
         toast('작성 메모와 제목이 필요합니다.', true);
+        return;
+    }
+    if ($('#continuePost').is(':checked') && !selectedContinuationPost()) {
+        toast('이어쓸 이전 글을 선택해주세요.', true);
         return;
     }
 
@@ -584,28 +722,38 @@ async function generateSelected() {
     setLoading(true, modeToLoadingMessage(mode));
     try {
         if (mode === 'TITLE') {
-            await generateTitle();
+            if (await generateTitle()) {
+                await autoSaveGeneratedPost();
+            }
             return;
         }
         if (mode === 'CONTENT') {
-            await generateContent();
+            if (await generateContent()) {
+                await autoSaveGeneratedPost();
+            }
             return;
         }
         if (mode === 'SEO') {
-            await generateSeo();
+            if (await generateSeo()) {
+                await autoSaveGeneratedPost();
+            }
             return;
         }
 
         // ALL: 전체 순서대로 실행
         setLoading(true, '제목 생성 중…');
-        await generateTitle();
+        const generatedTitle = await generateTitle();
+        if (!generatedTitle) return;
 
         setLoading(true, '본문 생성 중…');
-        await generateContent();
+        const generatedContent = await generateContent();
+        if (!generatedContent) return;
 
         setLoading(true, 'SEO 생성 중…');
-        await generateSeo();
+        const generatedSeo = await generateSeo();
+        if (!generatedSeo) return;
 
+        await autoSaveGeneratedPost();
         toast('전체 글 생성을 완료했습니다.');
     } catch (err) {
         // API 에러 응답에서 detail 메시지를 우선 사용
@@ -762,7 +910,7 @@ async function copyInstagramText() {
     }
 }
 
-async function savePost() {
+function buildPostPayload() {
     const title   = getFirstTitle();
     const keyword = $('#keyword').val().trim();
 
@@ -771,7 +919,7 @@ async function savePost() {
     if (!keyword) return toast('작성 메모가 비어있습니다.', true);
 
     const seoText = $('#seo').val();
-    const payload = {
+    return {
         title,
         topic_keyword:   keyword,
         category:        $('#postType').val(),
@@ -780,22 +928,29 @@ async function savePost() {
         seo_description: seoText.split('\n')[0] || '',
         tags_text:       seoText.split('\n').slice(1).join('\n'),
     };
+}
 
+async function persistPost({ silent = false } = {}) {
+    const payload = buildPostPayload();
+    if (!payload) return null;
+
+    let savedPost = null;
     try {
         if (currentPostId) {
             // 기존 글 업데이트
-            await $.ajax({
+            savedPost = await $.ajax({
                 url:         `${API}/api/posts/${currentPostId}`,
                 method:      'PUT',
                 contentType: 'application/json',
                 data:        JSON.stringify(payload),
             });
-            toast('글을 업데이트했습니다.');
+            if (!silent) toast('글을 업데이트했습니다.');
         } else {
             // 새 글 생성
-            const post = await postJson(`${API}/api/posts`, payload);
-            updateCurrentPostUI(post.id);
-            toast('글을 저장했습니다.');
+            savedPost = await postJson(`${API}/api/posts`, payload);
+            updateCurrentPostUI(savedPost.id);
+            renderContinuationOptions();
+            if (!silent) toast('글을 저장했습니다.');
         }
 
         await loadDashboard();
@@ -803,11 +958,27 @@ async function savePost() {
             $('#searchKeyword').val().trim(),
             $('#filterStatus').val(),
         );
-        showView('posts');
+        await loadContinuationPosts();
+        return savedPost;
     } catch (err) {
         const message = err?.responseJSON?.detail || '저장 중 오류가 발생했습니다.';
-        toast(message, true);
-        console.error('[savePost] 저장 오류:', err);
+        if (!silent) toast(message, true);
+        console.error('[persistPost] 저장 오류:', err);
+        return null;
+    }
+}
+
+async function autoSaveGeneratedPost() {
+    const savedPost = await persistPost({ silent: true });
+    if (savedPost) {
+        toast('생성 결과를 자동 저장했습니다.');
+    }
+}
+
+async function savePost() {
+    const savedPost = await persistPost({ silent: false });
+    if (savedPost) {
+        showView('posts');
     }
 }
 
@@ -831,6 +1002,7 @@ async function deleteCurrentPost() {
         resetEditor();
         await loadDashboard();
         await loadPosts();
+        await loadContinuationPosts();
         showView('posts');
         toast('글을 삭제했습니다.');
     } catch (err) {
@@ -847,7 +1019,9 @@ async function deleteCurrentPost() {
 function resetEditor() {
     $('#keyword').val('');
     $('#postType').val('IT');
-    syncIncludeCodeVisibility();
+    syncCategoryOptions();
+    $('#continuePost').prop('checked', false);
+    syncContinuationVisibility();
     $('#title').val('');
     $('#contentText').val('');
     $('#seo').val('');
@@ -862,6 +1036,9 @@ function resetEditor() {
  */
 function clearReferenceImage() {
     referenceImageDataUrls = [];
+    referenceImageItems = [];
+    aiReferenceImageDataUrls = [];
+    selectedAiImageIndexes = [];
     referenceImageNotes = [];
     $('#referenceImage').val('');
     $('#referenceImageList').empty();
@@ -962,6 +1139,54 @@ function formatPhotoTime(date) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function compareImageFileNames(a, b) {
+    const nameOrder = FILENAME_COLLATOR.compare(a.name, b.name);
+    return nameOrder || (a.originalIndex - b.originalIndex);
+}
+
+function imageNoteForItem(item, index) {
+    const takenTime = formatPhotoTime(item.takenAt);
+    const fileTime = formatPhotoTime(item.fileTime);
+    const timeText = takenTime
+        ? `촬영 시간 ${takenTime}`
+        : fileTime
+            ? `파일 수정 시간 ${fileTime}`
+            : '시간 정보 없음';
+    const selectedOrder = selectedAiImageIndexes.indexOf(index);
+    const analysisText = selectedOrder >= 0
+        ? `AI 분석 선택 ${selectedOrder + 1}번째`
+        : 'AI 분석 제외';
+    return `사진 ${index + 1}: 파일명 ${item.name}, ${timeText}, ${analysisText}`;
+}
+
+function syncAiReferenceImages() {
+    aiReferenceImageDataUrls = selectedAiImageIndexes
+        .map((index) => referenceImageItems[index]?.dataUrl)
+        .filter(Boolean);
+    referenceImageNotes = referenceImageItems.map(imageNoteForItem);
+}
+
+function renderReferenceImageList() {
+    syncAiReferenceImages();
+    $('#referenceImageList').html(referenceImageItems.map((item, index) => {
+        const isSelected = selectedAiImageIndexes.includes(index);
+        return `
+            <label class="image-reference-item ${isSelected ? 'is-ai-selected' : ''}">
+                <input
+                    type="checkbox"
+                    class="image-ai-checkbox"
+                    data-image-index="${index}"
+                    ${isSelected ? 'checked' : ''}
+                    aria-label="사진 ${index + 1} AI 분석 선택"
+                >
+                <img src="${item.dataUrl}" alt="본문 사진 ${index + 1}">
+                <span>사진 ${index + 1}${isSelected ? ' · AI 분석' : ''}</span>
+                <small>${escapeHtml(item.name)}</small>
+            </label>
+        `;
+    }).join(''));
+}
+
 function handleReferenceImageFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) {
@@ -985,39 +1210,25 @@ function handleReferenceImageFiles(fileList) {
             extractPhotoTakenAt(file),
         ]);
         const fileTime = file.lastModified ? new Date(file.lastModified) : null;
-        const sortTime = takenAt || fileTime;
         return {
             name: file.name,
             dataUrl,
             takenAt,
             fileTime,
-            sortValue: sortTime ? sortTime.getTime() : Number.MAX_SAFE_INTEGER,
             originalIndex,
         };
     }))
         .then((items) => {
-            items.sort((a, b) => (a.sortValue - b.sortValue) || (a.originalIndex - b.originalIndex));
+            items.sort(compareImageFileNames);
+            referenceImageItems = items;
             referenceImageDataUrls = items.map((item) => item.dataUrl);
-            referenceImageNotes = items.map((item, index) => {
-                const takenTime = formatPhotoTime(item.takenAt);
-                const fileTime = formatPhotoTime(item.fileTime);
-                const timeText = takenTime
-                    ? `촬영 시간 ${takenTime}`
-                    : fileTime
-                        ? `파일 수정 시간 ${fileTime}`
-                        : '시간 정보 없음';
-                return `사진 ${index + 1}: ${item.name}, ${timeText}`;
-            });
-            $('#referenceImageList').html(items.map((item, index) => `
-                <div class="image-reference-item">
-                    <img src="${item.dataUrl}" alt="본문 사진 ${index + 1}">
-                    <span>사진 ${index + 1}</span>
-                    <small>${escapeHtml(formatPhotoTime(item.takenAt) || formatPhotoTime(item.fileTime) || '시간 정보 없음')}</small>
-                </div>
-            `).join(''));
+            selectedAiImageIndexes = items
+                .slice(0, MAX_AI_IMAGE_ANALYSIS_COUNT)
+                .map((_, index) => index);
+            renderReferenceImageList();
             $('#referenceImagePreview').show();
             updatePostPreview();
-            toast(`사진 ${items.length}장을 불러왔습니다.`);
+            toast(`사진 ${items.length}장을 불러왔습니다. AI 분석 대표 사진은 최대 ${MAX_AI_IMAGE_ANALYSIS_COUNT}장까지 선택할 수 있습니다.`);
         })
         .catch((err) => {
             toast('이미지를 읽는 중 오류가 발생했습니다.', true);
@@ -1062,7 +1273,6 @@ async function copyText() {
  */
 async function copyHtml() {
     const title       = getFirstTitle();
-    const keyword     = $('#keyword').val().trim();
     const contentText = $('#contentText').val().trim();
     const seoText     = $('#seo').val().trim();
 
@@ -1088,14 +1298,13 @@ async function copyHtml() {
                 }),
             ]);
         } else {
-            const data = await postJson(`${API}/api/ai/html-convert`, {
-                title,
-                keyword,
-                content_text: contentText,
-            });
-            await navigator.clipboard.writeText(data.result);
+            await navigator.clipboard.writeText(
+                `${title}\n\n${contentText}\n\n${seoText}`.trim(),
+            );
+            toast('브라우저가 HTML 이미지 복사를 지원하지 않아 텍스트만 복사했습니다.', true);
+            return;
         }
-        toast('네이버 블로그에 붙여넣을 HTML을 복사했습니다.');
+        toast('사진이 포함된 미리보기 HTML을 복사했습니다.');
     } catch (err) {
         const message = err?.responseJSON?.detail || 'HTML 변환 중 오류가 발생했습니다.';
         toast(message, true);
@@ -1204,11 +1413,13 @@ $('#filterStatus').on('change', function () {
 });
 
 // 글 상태 드롭다운 변경 시 색상 클래스 갱신
-$('#postType').on('change', syncIncludeCodeVisibility);
+$('#postType').on('change', syncCategoryOptions);
 
 $('#postStatus').on('change', function () {
     $(this).attr('data-status', $(this).val());
 });
+
+$('#continuePost').on('change', syncContinuationVisibility);
 
 // 본문 사진 업로드: 브라우저에서 data URL로 읽어 OpenAI 요청에 함께 전달합니다.
 $('#referenceImage').on('change', function () {
@@ -1236,6 +1447,27 @@ $('#referenceImageDropzone')
         }
     });
 
+$('#referenceImageList').on('change', '.image-ai-checkbox', function () {
+    const imageIndex = Number($(this).data('image-index'));
+    const isChecked = $(this).is(':checked');
+
+    if (isChecked && selectedAiImageIndexes.length >= MAX_AI_IMAGE_ANALYSIS_COUNT) {
+        $(this).prop('checked', false);
+        return toast(`AI 분석 대표 사진은 최대 ${MAX_AI_IMAGE_ANALYSIS_COUNT}장까지 선택할 수 있습니다.`, true);
+    }
+
+    if (isChecked) {
+        selectedAiImageIndexes = [...selectedAiImageIndexes, imageIndex]
+            .filter((value, index, array) => array.indexOf(value) === index)
+            .sort((a, b) => a - b);
+    } else {
+        selectedAiImageIndexes = selectedAiImageIndexes.filter((index) => index !== imageIndex);
+    }
+
+    renderReferenceImageList();
+    toast(`AI 분석 대표 사진 ${selectedAiImageIndexes.length}장을 선택했습니다.`);
+});
+
 $('#btnClearReferenceImage').on('click', clearReferenceImage);
 
 // 작성 중에도 미리보기가 계속 갱신되도록 처리합니다.
@@ -1257,7 +1489,9 @@ $(window).on('resize', syncCreatePanelHeights);
 $(async function () {
     await loadDashboard();
     await loadPosts();
-    syncIncludeCodeVisibility();
+    await loadContinuationPosts();
+    syncCategoryOptions();
+    syncContinuationVisibility();
     updatePostPreview();
     const initialView = window.location.hash === '#create'
         ? 'create'

@@ -140,6 +140,17 @@
                     </select>
                 </div>
 
+                <div class="field-group continuation-group">
+                    <label class="check-label">
+                        <input id="continuePost" type="checkbox">
+                        <span class="check-mark"></span>
+                        이전 글과 이어서 작성
+                    </label>
+                    <select id="continuationPostId" class="continuation-select" style="display:none;">
+                        <option value="">연결할 글 선택</option>
+                    </select>
+                </div>
+
                 <div class="field-group">
                     <label for="targetLength" class="label-with-tooltip">
                         <span>목표 글자 수</span>
@@ -147,20 +158,20 @@
                             ?
                             <span class="tooltip-panel" role="tooltip">
                                 권장 글자 수<br>
-                                짧은 팁/리뷰: 1,000~1,500자<br>
-                                일반 정보글: 2,000~3,000자<br>
-                                자세한 가이드: 3,500~5,000자<br>
-                                긴 비교/정리글: 5,000자 이상
+                                맛집/음식: 1,500~2,200자<br>
+                                여행/장소: 1,800~2,800자<br>
+                                IT/금융 정보글: 2,000~3,000자<br>
+                                생활/리뷰: 1,500~2,200자
                             </span>
                         </span>
                     </label>
                     <input
                         id="targetLength"
                         type="number"
-                        value="2500"
+                        value="2200"
                         min="1000"
                         max="10000"
-                        step="500"
+                        step="100"
                     >
                 </div>
 
@@ -187,7 +198,7 @@
                     <input id="referenceImage" class="visually-hidden-file" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
                     <div id="referenceImageDropzone" class="image-dropzone" role="button" tabindex="0" aria-label="본문 사진 업로드">
                         <strong>사진을 여기에 끌어다 놓기</strong>
-                        <span>클릭해서 선택할 수도 있어요 · 최대 12장</span>
+                        <span>클릭해서 선택할 수도 있어요 · 최대 30장 · AI 분석 대표 12장 선택</span>
                     </div>
                     <div id="referenceImagePreview" class="image-reference" style="display:none;">
                         <div id="referenceImageList" class="image-reference-list"></div>

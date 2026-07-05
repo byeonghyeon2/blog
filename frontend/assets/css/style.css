@@ -446,10 +446,23 @@ textarea {
 }
 
 .image-reference-item {
+    position: relative;
+    display: block;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
     background: #f8f9fb;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.image-reference-item:hover {
+    border-color: var(--color-primary);
+}
+
+.image-reference-item.is-ai-selected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(33, 120, 255, 0.16);
 }
 
 .image-reference-item img {
@@ -457,6 +470,16 @@ textarea {
     width: 100%;
     aspect-ratio: 1 / 1;
     object-fit: cover;
+}
+
+.image-ai-checkbox {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+    z-index: 1;
 }
 
 .image-reference-item span {

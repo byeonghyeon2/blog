@@ -36,6 +36,9 @@ NATURAL_TONE_RULES = """
 - 초등 설명투나 억지 예시 유도 표현은 사용하지 않기
 - 보고서식 결론 연결어나 딱딱한 마무리 표현은 사용하지 않기
 - 마무리는 실제 후기나 다음에 참고할 팁처럼 자연스럽게 끝내기
+- "사진으로 보기에", "이미지상으로는", "사진상으로는", "보기에는", "보여집니다" 같은 AI 분석 티가 나는 표현 금지
+- 맛집/여행/장소/리뷰 글은 실제로 다녀온 사람이 쓰듯이 "좋았어요", "맛있었어요", "깔끔했어요", "생각보다 괜찮았어요"처럼 자연스러운 후기체 사용
+- 확신이 부족한 내용은 어색한 추측 표현을 쓰지 말고, 확인 가능한 사실과 담백한 감상 위주로 짧게 작성
 """.strip()
 
 NAVER_BLOG_RULES = """
@@ -75,6 +78,29 @@ CATEGORY_LABELS: dict[BlogCategory, str] = {
     BlogCategory.LIFESTYLE: "생활 / 리뷰",
 }
 
+CATEGORY_LENGTH_GUIDANCE: dict[BlogCategory, str] = {
+    BlogCategory.IT: (
+        "권장 2,000~3,000자. 개념, 사용하는 이유, 실제 적용 순서, 주의할 점, "
+        "초보자가 헷갈릴 만한 부분을 풀어 정보량을 확보한다."
+    ),
+    BlogCategory.FINANCE: (
+        "권장 2,000~3,000자. 핵심 개념, 조건, 장점, 리스크, 체크할 기준을 나누되 "
+        "투자 권유처럼 보이지 않게 균형 있게 설명한다."
+    ),
+    BlogCategory.FOOD: (
+        "권장 1,500~2,200자. 위치, 주차, 웨이팅, 분위기, 메뉴, 가격대, 맛, "
+        "추천 대상, 재방문 의사를 사진 흐름에 맞춰 담백하게 채운다."
+    ),
+    BlogCategory.TRAVEL: (
+        "권장 1,800~2,800자. 동선, 주차, 소요 시간, 비용, 볼거리, 사진 포인트, "
+        "방문 팁, 아쉬운 점을 실제 방문 후기처럼 정리한다."
+    ),
+    BlogCategory.LIFESTYLE: (
+        "권장 1,500~2,200자. 사용 계기, 실제 사용감, 장점, 아쉬운 점, "
+        "추천 대상, 구매/이용 팁을 개인 후기처럼 정리한다."
+    ),
+}
+
 CATEGORY_FORMAT_RULES: dict[BlogCategory, str] = {
     BlogCategory.IT: """
 - 문제 상황 또는 사용 계기를 짧게 설명
@@ -91,12 +117,14 @@ CATEGORY_FORMAT_RULES: dict[BlogCategory, str] = {
 - 사진 위주 맛집 글처럼 구성: 사진 위치 표시 → 짧은 코멘트 → 정보 목록
 - 맛, 분위기, 웨이팅, 가격대, 추천 메뉴, 재방문 의사를 분리해서 작성
 - 말투는 과장 없이 담백하게, 직접 다녀온 사람이 알려주는 느낌으로 작성
+- 사진 설명도 분석문처럼 쓰지 말고 "매장이 깔끔했어요", "양이 꽤 괜찮았어요", "먹어보니 간이 잘 맞았어요"처럼 실제 후기 문장으로 작성
 - 참고 스타일은 담백한 개인 맛집 기록 느낌만 반영하고 문장이나 표현은 따라 쓰지 않기
 """.strip(),
     BlogCategory.TRAVEL: """
 - 동선, 시간대, 비용, 준비물, 주의점을 목록으로 정리
 - 사진 위치마다 그 장면에서 독자가 알아야 할 팁을 짧게 덧붙이기
 - 감상은 담백하게 쓰고 실제 이동/방문에 도움이 되는 정보 중심으로 작성
+- 사진 설명도 "길이 편했어요", "사람이 많지 않아서 보기 좋았어요", "생각보다 가까웠어요"처럼 직접 다녀온 후기 문장으로 작성
 """.strip(),
     BlogCategory.LIFESTYLE: """
 - 사용 계기, 실제 사용감, 장점, 아쉬운 점, 추천 대상을 분리
@@ -261,29 +289,35 @@ def reference_image_instruction(image_count: int = 0, image_notes: list[str] | N
     사용자가 올린 참고 이미지를 어떻게 활용할지 프롬프트에 추가합니다.
     이미지 내용과 사용자가 적은 메모를 함께 해석하되, 말투는 사용자 메모를 우선하도록 제한합니다.
     """
-    if image_count <= 0:
+    note_count = len([note for note in (image_notes or []) if note and note.strip()])
+    total_image_count = max(image_count, note_count)
+
+    if total_image_count <= 0:
         return ""
 
     notes = [note.strip() for note in (image_notes or []) if note and note.strip()]
     note_text = "\n".join(f"- {note}" for note in notes)
     timing_note = f"""
 
-사진 시간 정보:
+사진 파일명 정렬 정보:
 {note_text}
 """ if note_text else ""
 
     return f"""
 
 참고 방식:
-- 첨부된 참고 이미지 {image_count}장을 각각 분석해서 글의 소재로 활용
-- 사진에서 촬영 시간, 영수증 시간, 화면 캡처 시간, 예약 시간처럼 시간 정보가 확인되면 그 시간을 우선 기준으로 삼기
-- 시간 정보가 여러 장에 있으면 오래된 시간에서 최근 시간 순서로 본문 흐름을 구성
-- 시간이 불확실한 사진은 주변 내용과 파일 순서를 참고하되, 단정하지 말고 자연스럽게 배치
+- 사용자가 업로드한 전체 사진 {total_image_count}장은 프론트에서 파일명 자연 정렬 기준으로 이미 사진 1, 사진 2, 사진 3 순서가 정해져 있음
+- OpenAI 이미지 분석에는 사용자가 선택한 대표 사진 {image_count}장만 전달됨
+- 본문에서는 이 사진 번호 순서를 절대 바꾸지 말고 사진 1부터 사진 {total_image_count}까지 오름차순으로 배치
+- 사진 파일명 정렬 정보에 "AI 분석 선택"이라고 표시된 사진은 이미지 내용을 구체적으로 반영하고, "AI 분석 제외" 사진은 파일명과 전체 흐름을 기준으로 과장 없이 짧은 배치 코멘트를 작성
+- 사진에서 촬영 시간, 영수증 시간, 화면 캡처 시간, 예약 시간처럼 시간 정보가 보여도 사진 번호 순서를 우선하고, 시간 정보는 설명 보강용으로만 사용
 - 사용자가 작성 메모에서 사진 이야기를 했다면 이미지에서 확인되는 내용을 자연스럽게 보강
-- 이미지 속 텍스트나 정보가 불확실하면 단정하지 말고 "사진상으로는", "보기에는"처럼 조심스럽게 표현
-- 본문에는 적절한 위치마다 [사진 1 삽입: 사진 내용에 맞는 짧은 설명] 형식의 줄을 넣기
-- 여러 장이면 사진 번호 순서대로 배치하되, 내용 흐름에 맞게 위치를 조정
-- 사진 삽입 줄 바로 아래에는 1~2문장 정도의 짧은 코멘트를 작성
+- 이미지 속 텍스트나 정보가 불확실하면 억지로 추측하지 말고, 확인 가능한 내용만 자연스러운 방문 후기 문장으로 작성
+- 최종 본문에는 "사진으로 보기에", "이미지상", "사진상으로는", "보기에는" 같은 표현을 쓰지 말 것
+- 본문에는 각 사진마다 [사진 N 삽입: 사진 내용에 맞는 짧은 설명] 형식의 줄을 반드시 넣기
+- 각 사진 삽입 줄 바로 아래에는 해당 사진을 보고 이해할 수 있는 1~3문장 코멘트를 작성
+- 사진 여러 장을 한꺼번에 모아두지 말고, 사진 1 삽입 줄 아래 설명 → 사진 2 삽입 줄 아래 설명 → 사진 3 삽입 줄 아래 설명 순서로 본문을 구성
+- 사진 사이사이에 필요한 정보 목록이나 팁을 넣을 수 있지만, 다음 사진 번호로 넘어갈 때는 반드시 오름차순을 유지
 - 최종 말투와 강조점은 사용자 작성 메모에서 파악하되, 문장은 그대로 가져오지 말고 새로 다듬어 작성
 {timing_note}
 """.rstrip()
@@ -309,6 +343,8 @@ def title_prompt(
     category: BlogCategory,
     image_count: int = 0,
     image_notes: list[str] | None = None,
+    continuation_title: str = "",
+    continuation_content: str = "",
 ) -> str:
     """
     사용자의 작성 메모와 카테고리를 기반으로 제목 후보 5개를 요청하는 프롬프트를 생성합니다.
@@ -320,6 +356,23 @@ def title_prompt(
     Returns:
         완성된 프롬프트 문자열
     """
+    continuation_block = ""
+    if continuation_title or continuation_content:
+        continuation_excerpt = continuation_content.strip()
+        if len(continuation_excerpt) > 800:
+            continuation_excerpt = continuation_excerpt[:800].rstrip() + "..."
+        continuation_block = f"""
+
+이전 글 연결 참고:
+- 이전 글 제목: {continuation_title or "제목 없음"}
+- 이번 제목은 이전 글과 이어지는 후속 글처럼 자연스럽게 만들기
+- 필요하면 "2편", "이어지는 후기", "상세 후기", "메뉴/동선/사진 정리" 같은 표현을 과하지 않게 활용
+- 이전 글 제목을 그대로 반복하지 말고, 이번 글에서 새로 다룰 초점을 제목에 넣기
+
+이전 글 일부:
+{continuation_excerpt}
+"""
+
     return f"""
 아래 조건에 맞춰 네이버 블로그 제목 후보 5개를 작성해줘.
 
@@ -330,6 +383,7 @@ def title_prompt(
 카테고리 작성 방향: {category_instruction(category)}
 {reference_image_instruction(image_count, image_notes)}
 {reference_blog_style_rules(category)}
+{continuation_block}
 
 말투 규칙:
 {STYLE_RULES}
@@ -356,6 +410,8 @@ def content_prompt(
     target_length: int,
     image_count: int = 0,
     image_notes: list[str] | None = None,
+    continuation_title: str = "",
+    continuation_content: str = "",
 ) -> str:
     """
     제목과 사용자 작성 메모를 기반으로 실제 블로그 본문을 요청하는 프롬프트를 생성합니다.
@@ -365,7 +421,7 @@ def content_prompt(
         keyword:       사용자가 입력한 작성 메모
         category:      카테고리
         include_code:  예제 코드 포함 여부
-        target_length: 목표 글자 수 (기본 2500자)
+        target_length: 목표 글자 수
 
     Returns:
         완성된 프롬프트 문자열
@@ -376,6 +432,24 @@ def content_prompt(
         if include_code
         else "코드는 포함하지 말고 일반 독자가 읽기 쉬운 설명으로 작성"
     )
+    continuation_block = ""
+    if continuation_title or continuation_content:
+        continuation_excerpt = continuation_content.strip()
+        if len(continuation_excerpt) > 3000:
+            continuation_excerpt = continuation_excerpt[:3000].rstrip() + "..."
+        continuation_block = f"""
+
+이전 글 연결 참고:
+- 이전 글 제목: {continuation_title or "제목 없음"}
+- 이전 글은 그대로 이어 붙일 원문이 아니라 맥락, 말투, 중복 방지 참고 자료로만 사용
+- 새 글 첫 부분에는 이전 글과 자연스럽게 이어지는 문장을 1~2문장 넣되, 이번 글만 봐도 이해되게 짧은 맥락을 제공
+- 이전 글에서 이미 설명한 기본 정보는 반복하지 말고, 필요한 경우 한 줄로만 요약
+- 이전 글과 같은 문장, 같은 표현, 같은 순서로 복사하지 말고 이번 사진/메모 중심으로 새롭게 작성
+- 새 글 마지막에는 필요하면 다음 글로 이어질 수 있는 담백한 마무리 문장을 넣기
+
+이전 글 내용 참고:
+{continuation_excerpt}
+"""
 
     return f"""
 아래 조건에 맞춰 네이버 블로그 본문을 작성해줘.
@@ -387,7 +461,9 @@ def content_prompt(
 카테고리: {CATEGORY_LABELS[category]}
 카테고리 작성 방향: {category_instruction(category)}
 목표 길이: 약 {target_length}자
+카테고리별 글자 수 기준: {CATEGORY_LENGTH_GUIDANCE[category]}
 {reference_image_instruction(image_count, image_notes)}
+{continuation_block}
 
 말투 규칙:
 {STYLE_RULES}
@@ -408,6 +484,9 @@ def content_prompt(
 
 추가 조건:
 - 사용자가 쓴 메모를 단순 키워드가 아니라 초안 재료로 보고 핵심 주장, 경험, 팁, 감정을 분석
+- 목표 길이는 참고 블로그 분석 기준을 반영한 값이므로 너무 짧은 단답형 후기가 되지 않게 충분한 정보량으로 작성
+- 글자 수를 억지로 늘리기보다 방문/사용 맥락, 확인 가능한 정보, 사진별 코멘트, 장단점, 추천 대상, 실사용 팁으로 자연스럽게 채울 것
+- 목표 글자 수의 ±15% 안에 들어오도록 분량을 조절하되, 반복 문장이나 같은 의미의 문장을 늘려 쓰지 말 것
 - 사용자가 알리고 싶어 하는 팁이나 강조점은 빠뜨리지 말고 본문에 자연스럽게 반영
 - 사용자의 말투가 캐주얼하면 캐주얼하게, 담백하면 담백하게 맞춰 쓰되 원문 문장은 그대로 사용하지 말 것
 - 부족한 배경 설명은 일반적으로 알려진 정보와 문맥을 바탕으로 보완하되, 최신 사실이나 불확실한 정보는 단정하지 말 것

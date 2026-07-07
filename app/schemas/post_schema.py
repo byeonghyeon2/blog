@@ -11,6 +11,7 @@ class PostCreate(BaseModel):
     category: BlogCategory = BlogCategory.IT
     content_text: str | None = None
     content_html: str | None = None
+    reference_images_json: str | None = None
     seo_description: str | None = None
     tags_text: str | None = None
 
@@ -21,6 +22,7 @@ class PostUpdate(BaseModel):
     status: PostStatus | None = None
     content_text: str | None = None
     content_html: str | None = None
+    reference_images_json: str | None = None
     seo_description: str | None = None
     tags_text: str | None = None
     tistory_url: str | None = None
@@ -34,6 +36,7 @@ class PostOut(BaseModel):
     status: PostStatus
     content_text: str | None = None
     content_html: str | None = None
+    reference_images_json: str | None = None
     seo_description: str | None = None
     tags_text: str | None = None
     tistory_url: str | None = None

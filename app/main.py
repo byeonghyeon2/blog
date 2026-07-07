@@ -44,7 +44,29 @@ def ensure_generation_log_token_columns() -> None:
                 )
 
 
+def ensure_post_reference_image_column() -> None:
+    """
+    기존 로컬 DB에 posts 테이블이 이미 있는 경우,
+    저장된 글을 다시 열 때 사진 미리보기를 복원할 수 있도록 사진 JSON 컬럼을 추가합니다.
+    MySQL은 사진 data URL 용량을 고려해 LONGTEXT를 사용합니다.
+    """
+    inspector = inspect(engine)
+    columns = {
+        column["name"]
+        for column in inspector.get_columns("posts")
+    }
+    if "reference_images_json" in columns:
+        return
+
+    column_type = "LONGTEXT" if engine.dialect.name == "mysql" else "TEXT"
+    with engine.begin() as connection:
+        connection.execute(
+            text(f"ALTER TABLE posts ADD COLUMN reference_images_json {column_type}")
+        )
+
+
 ensure_generation_log_token_columns()
+ensure_post_reference_image_column()
 
 app = FastAPI(title="Naver Blog Writer")
 

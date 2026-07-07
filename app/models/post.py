@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Optional
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,6 +38,7 @@ class Post(Base):
     status: Mapped[PostStatus] = mapped_column(Enum(PostStatus), default=PostStatus.DRAFT)
     content_text: Mapped[Optional[str]] = mapped_column(Text)
     content_html: Mapped[Optional[str]] = mapped_column(Text)
+    reference_images_json: Mapped[Optional[str]] = mapped_column(Text().with_variant(LONGTEXT, "mysql"))
     seo_description: Mapped[Optional[str]] = mapped_column(String(300))
     tags_text: Mapped[Optional[str]] = mapped_column(String(500))
     tistory_url: Mapped[Optional[str]] = mapped_column(String(500))

@@ -336,19 +336,6 @@ function previewSeoToHtml(value) {
     `;
 }
 
-/**
- * 현재 작성 영역의 제목/본문/SEO 값을 조합해 최종 글 미리보기를 갱신합니다.
- */
-function buildNaverClipboardHtml(title, contentText, seoText) {
-    return `
-        <article>
-            ${title ? `<h1>${escapeHtml(title)}</h1>` : ''}
-            ${contentText ? previewTextToHtml(contentText) : ''}
-            ${seoText ? previewSeoToHtml(seoText) : ''}
-        </article>
-    `.trim();
-}
-
 function updatePostPreview() {
     const title = getFirstTitle();
     const content = $('#contentText').val().trim();
@@ -584,6 +571,51 @@ function syncContinuationVisibility() {
     }
 }
 
+function serializeReferenceImages() {
+    return JSON.stringify({
+        images: referenceImageItems.map((item) => ({
+            name: item.name || '',
+            dataUrl: item.dataUrl || '',
+            takenAt: item.takenAt ? new Date(item.takenAt).toISOString() : null,
+            fileTime: item.fileTime ? new Date(item.fileTime).toISOString() : null,
+            originalIndex: Number.isInteger(item.originalIndex) ? item.originalIndex : 0,
+        })),
+        selectedAiImageIndexes,
+    });
+}
+
+function restoreReferenceImages(serializedValue) {
+    clearReferenceImage();
+
+    if (!serializedValue) return;
+
+    try {
+        const parsed = JSON.parse(serializedValue);
+        const images = Array.isArray(parsed.images) ? parsed.images : [];
+        referenceImageItems = images
+            .filter((item) => item && item.dataUrl)
+            .map((item, index) => ({
+                name: item.name || `사진 ${index + 1}`,
+                dataUrl: item.dataUrl,
+                takenAt: item.takenAt ? new Date(item.takenAt) : null,
+                fileTime: item.fileTime ? new Date(item.fileTime) : null,
+                originalIndex: Number.isInteger(item.originalIndex) ? item.originalIndex : index,
+            }));
+        referenceImageDataUrls = referenceImageItems.map((item) => item.dataUrl);
+        selectedAiImageIndexes = Array.isArray(parsed.selectedAiImageIndexes)
+            ? parsed.selectedAiImageIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < referenceImageItems.length)
+            : referenceImageItems.slice(0, MAX_AI_IMAGE_ANALYSIS_COUNT).map((_, index) => index);
+
+        if (referenceImageItems.length) {
+            renderReferenceImageList();
+            $('#referenceImagePreview').show();
+        }
+    } catch (err) {
+        console.warn('[restoreReferenceImages] 저장된 사진 복원 실패:', err);
+        clearReferenceImage();
+    }
+}
+
 /**
  * 목록에서 클릭한 글의 전체 데이터를 API에서 불러와 편집 패널에 채웁니다.
  * 로드에 실패하면 에러 토스트를 표시합니다.
@@ -603,6 +635,7 @@ async function openPost(postId) {
         $('#postType').val(post.category);
         $('#title').val(post.title);
         $('#contentText').val(post.content_text || '');
+        restoreReferenceImages(post.reference_images_json);
 
         // SEO 설명(첫 줄)과 태그(나머지)를 하나의 textarea에 표시
         $('#seo').val([post.seo_description, post.tags_text].filter(Boolean).join('\n'));
@@ -925,6 +958,7 @@ function buildPostPayload() {
         category:        $('#postType').val(),
         status:          $('#postStatus').val(),
         content_text:    $('#contentText').val(),
+        reference_images_json: serializeReferenceImages(),
         seo_description: seoText.split('\n')[0] || '',
         tags_text:       seoText.split('\n').slice(1).join('\n'),
     };
@@ -1241,8 +1275,14 @@ function handleReferenceImageFiles(fileList) {
 // 클립보드 복사 함수
 // ───────────────────────────────────────────
 
+function copiedBodyToHtml(value) {
+    const escaped = escapeHtml(value);
+    return `<div style="font-family:'Nanum Gothic','나눔고딕',sans-serif;">${escaped.replace(/\n/g, '<br>')}</div>`;
+}
+
 /**
  * 본문 텍스트를 클립보드에 복사합니다.
+ * 사진 위치 문구는 생성된 그대로 두고, HTML 복사가 가능한 브라우저에서는 나눔고딕 글꼴만 적용합니다.
  * 본문이 비어있으면 복사하지 않습니다.
  * navigator.clipboard가 없는 구형 브라우저 환경에서는 에러 토스트를 표시합니다.
  */
@@ -1259,56 +1299,22 @@ async function copyText() {
     }
 
     try {
-        await navigator.clipboard.writeText(text);
-        toast('본문 텍스트를 복사했습니다.');
-    } catch (err) {
-        toast('클립보드 복사에 실패했습니다.', true);
-        console.error('[copyText] 복사 실패:', err);
-    }
-}
-
-/**
- * 본문 텍스트를 네이버 블로그에 붙여넣기 쉬운 HTML로 서버에서 변환한 뒤 클립보드에 복사합니다.
- * 제목 또는 본문이 비어있으면 변환을 요청하지 않습니다.
- */
-async function copyHtml() {
-    const title       = getFirstTitle();
-    const contentText = $('#contentText').val().trim();
-    const seoText     = $('#seo').val().trim();
-
-    if (!contentText) {
-        return toast('변환할 본문이 없습니다.', true);
-    }
-    if (!title) {
-        return toast('제목이 필요합니다. 제목을 먼저 입력해주세요.', true);
-    }
-
-    // navigator.clipboard 지원 여부 확인
-    if (!navigator.clipboard) {
-        return toast('클립보드 API를 지원하지 않는 환경입니다.', true);
-    }
-
-    try {
-        const html = buildNaverClipboardHtml(title, contentText, seoText);
         if (window.ClipboardItem && navigator.clipboard.write) {
             await navigator.clipboard.write([
                 new ClipboardItem({
-                    'text/html':  new Blob([html], { type: 'text/html' }),
-                    'text/plain': new Blob([contentText], { type: 'text/plain' }),
+                    'text/html':  new Blob([copiedBodyToHtml(text)], { type: 'text/html' }),
+                    'text/plain': new Blob([text], { type: 'text/plain' }),
                 }),
             ]);
-        } else {
-            await navigator.clipboard.writeText(
-                `${title}\n\n${contentText}\n\n${seoText}`.trim(),
-            );
-            toast('브라우저가 HTML 이미지 복사를 지원하지 않아 텍스트만 복사했습니다.', true);
+            toast('본문을 복사했습니다.');
             return;
         }
-        toast('사진이 포함된 미리보기 HTML을 복사했습니다.');
+
+        await navigator.clipboard.writeText(text);
+        toast('본문을 텍스트로 복사했습니다.');
     } catch (err) {
-        const message = err?.responseJSON?.detail || 'HTML 변환 중 오류가 발생했습니다.';
-        toast(message, true);
-        console.error('[copyHtml] HTML 변환 실패:', err);
+        toast('클립보드 복사에 실패했습니다.', true);
+        console.error('[copyText] 복사 실패:', err);
     }
 }
 
@@ -1336,9 +1342,6 @@ $('#btnSave').on('click', savePost);
 
 // 본문 텍스트 복사 버튼
 $('#btnCopyText').on('click', copyText);
-
-// HTML 복사 버튼
-$('#btnCopyHtml').on('click', copyHtml);
 
 // 새 글 버튼: 편집 패널 초기화
 $('#btnNewPost').on('click', () => {

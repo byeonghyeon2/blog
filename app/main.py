@@ -81,6 +81,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def prevent_frontend_cache(request, call_next):
+    """
+    개발 중 크롬이 이전 정적 파일을 오래 들고 있어 다른 UI가 보이는 일을 막습니다.
+    API 응답은 그대로 두고, 프론트엔드 파일에만 캐시 방지 헤더를 붙입니다.
+    """
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # ── 라우터 등록 ──────────────────────────────────────────────────────────
 app.include_router(post_router.router)
 app.include_router(ai_router.router)
